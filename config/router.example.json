@@ -1,0 +1,55 @@
+{
+  "listen": ":8080",
+  "admin_listen": ":8081",
+  "default_pool": "default",
+  "pool_header": "X-Resource-Pool",
+  "update_interval": "1s",
+  "probe_timeout": "800ms",
+  "smooth_step": 0.25,
+  "passive_failure_threshold": 3,
+  "passive_eject_duration": "5s",
+  "load": {
+    "ewma_alpha": 0.35,
+    "utilization_weight": 0.65,
+    "queue_weight": 0.25,
+    "inflight_weight": 0.10,
+    "queue_soft_limit": 32,
+    "min_healthy_fraction": 0.03
+  },
+  "pools": [
+    {
+      "name": "default",
+      "backends": [
+        {
+          "id": "ascend-910b-a",
+          "url": "http://127.0.0.1:9001",
+          "capacity": 10,
+          "max_inflight": 128,
+          "health_url": "http://127.0.0.1:9001/healthz",
+          "metrics_url": "http://127.0.0.1:9101/metrics"
+        },
+        {
+          "id": "ascend-910b-b",
+          "url": "http://127.0.0.1:9002",
+          "capacity": 10,
+          "max_inflight": 128,
+          "health_url": "http://127.0.0.1:9002/healthz",
+          "metrics_url": "http://127.0.0.1:9102/metrics"
+        }
+      ]
+    },
+    {
+      "name": "isolated",
+      "backends": [
+        {
+          "id": "ascend-910c-c",
+          "url": "http://127.0.0.1:9011",
+          "capacity": 6,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9011/healthz",
+          "metrics_url": "http://127.0.0.1:9111/metrics"
+        }
+      ]
+    }
+  ]
+}
