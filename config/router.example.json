@@ -6,14 +6,22 @@
   "update_interval": "1s",
   "probe_timeout": "800ms",
   "smooth_step": 0.25,
+  "slow_start_duration": "15s",
   "passive_failure_threshold": 3,
   "passive_eject_duration": "5s",
+  "scheduler": {
+    "mode": "p2c_smooth_wrr"
+  },
   "load": {
     "ewma_alpha": 0.35,
-    "utilization_weight": 0.65,
-    "queue_weight": 0.25,
-    "inflight_weight": 0.10,
+    "utilization_weight": 0.45,
+    "queue_weight": 0.20,
+    "inflight_weight": 0.15,
+    "kv_cache_weight": 0.10,
+    "latency_weight": 0.10,
     "queue_soft_limit": 32,
+    "kv_cache_soft_limit": 1,
+    "latency_slo_ms": 2000,
     "min_healthy_fraction": 0.03
   },
   "pools": [

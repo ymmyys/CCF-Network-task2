@@ -18,6 +18,17 @@ import (
 	"time"
 )
 
+type BackendPhase string
+
+const (
+	PhaseActive     BackendPhase = "active"
+	PhaseDraining   BackendPhase = "draining"
+	PhaseDrained    BackendPhase = "drained"
+	PhaseRecovering BackendPhase = "recovering"
+)
+
+const weightEpsilon = 0.0001
+
 type Backend struct {
 	id                      string
 	target                  *url.URL
@@ -26,6 +37,7 @@ type Backend struct {
 	maxInflight             int64
 	passiveFailureThreshold int
 	passiveEjectDuration    time.Duration
+	slowStartDuration       time.Duration
 	proxy                   *httputil.ReverseProxy
 
 	inflight int64
@@ -35,8 +47,11 @@ type Backend struct {
 	desiredWeight       float64
 	effectiveWeight     float64
 	healthy             bool
+	phase               BackendPhase
+	phaseSince          time.Time
 	remoteUtilization   float64
 	queueDepth          float64
+	kvCacheUsage        float64
 	latencyEWMA         float64
 	lastError           string
 	lastUpdated         time.Time
@@ -49,6 +64,9 @@ type Backend struct {
 type BackendState struct {
 	ID                  string    `json:"id"`
 	URL                 string    `json:"url"`
+	Phase               string    `json:"phase"`
+	PhaseSince          time.Time `json:"phase_since"`
+	SlowStartProgress   float64   `json:"slow_start_progress"`
 	Capacity            float64   `json:"capacity"`
 	DesiredWeight       float64   `json:"desired_weight"`
 	EffectiveWeight     float64   `json:"effective_weight"`
@@ -58,6 +76,7 @@ type BackendState struct {
 	MaxInflight         int64     `json:"max_inflight"`
 	RemoteUtilization   float64   `json:"remote_utilization"`
 	QueueDepth          float64   `json:"queue_depth"`
+	KVCacheUsage        float64   `json:"kv_cache_usage"`
 	LatencyEWMAMillis   float64   `json:"latency_ewma_ms"`
 	LastError           string    `json:"last_error,omitempty"`
 	LastUpdated         time.Time `json:"last_updated"`
@@ -69,6 +88,8 @@ type BackendState struct {
 type metricsSample struct {
 	utilization float64
 	queueDepth  float64
+	kvCache     float64
+	latencyMS   float64
 }
 
 func newBackend(cfg BackendConfig, routerCfg Config) (*Backend, error) {
@@ -85,10 +106,13 @@ func newBackend(cfg BackendConfig, routerCfg Config) (*Backend, error) {
 		maxInflight:             cfg.MaxInflight,
 		passiveFailureThreshold: routerCfg.PassiveFailureThreshold,
 		passiveEjectDuration:    routerCfg.PassiveEjectDuration.Duration,
+		slowStartDuration:       routerCfg.SlowStartDuration.Duration,
 		capacity:                cfg.Capacity,
 		desiredWeight:           cfg.Capacity,
 		effectiveWeight:         cfg.Capacity,
 		healthy:                 true,
+		phase:                   PhaseActive,
+		phaseSince:              time.Now(),
 		lastUpdated:             time.Now(),
 	}
 	b.proxy = newReverseProxy(target, cfg.PreserveHost, b)
@@ -188,13 +212,7 @@ func (b *Backend) release(latency time.Duration) {
 	}
 
 	b.mu.Lock()
-	alpha := 0.25
-	ms := float64(latency.Microseconds()) / 1000
-	if b.latencyEWMA == 0 {
-		b.latencyEWMA = ms
-	} else {
-		b.latencyEWMA = alpha*ms + (1-alpha)*b.latencyEWMA
-	}
+	b.updateLatencyEWMALocked(float64(latency.Microseconds())/1000, 0.25)
 	b.mu.Unlock()
 }
 
@@ -203,10 +221,15 @@ func (b *Backend) schedulingState(now time.Time) (float64, bool) {
 	weight := b.effectiveWeight
 	healthy := b.healthy && now.After(b.passiveUntil)
 	maxInflight := b.maxInflight
+	capacity := b.capacity
+	phase := b.phase
 	b.mu.RUnlock()
 
 	inflight := atomic.LoadInt64(&b.inflight)
 	if maxInflight > 0 && inflight >= maxInflight {
+		return 0, false
+	}
+	if capacity <= 0 || phase == PhaseDrained {
 		return 0, false
 	}
 	return weight, healthy && weight > 0
@@ -218,6 +241,9 @@ func (b *Backend) state(now time.Time) BackendState {
 	return BackendState{
 		ID:                  b.id,
 		URL:                 b.target.String(),
+		Phase:               string(b.phase),
+		PhaseSince:          b.phaseSince,
+		SlowStartProgress:   b.slowStartProgressLocked(now),
 		Capacity:            b.capacity,
 		DesiredWeight:       b.desiredWeight,
 		EffectiveWeight:     b.effectiveWeight,
@@ -227,6 +253,7 @@ func (b *Backend) state(now time.Time) BackendState {
 		MaxInflight:         b.maxInflight,
 		RemoteUtilization:   b.remoteUtilization,
 		QueueDepth:          b.queueDepth,
+		KVCacheUsage:        b.kvCacheUsage,
 		LatencyEWMAMillis:   b.latencyEWMA,
 		LastError:           b.lastError,
 		LastUpdated:         b.lastUpdated,
@@ -237,27 +264,42 @@ func (b *Backend) state(now time.Time) BackendState {
 }
 
 func (b *Backend) setCapacity(capacity float64) error {
-	if capacity <= 0 {
-		return errors.New("capacity must be > 0")
+	if capacity < 0 {
+		return errors.New("capacity must be >= 0")
 	}
 
 	b.mu.Lock()
+	oldCapacity := b.capacity
 	b.capacity = capacity
-	b.lastUpdated = time.Now()
+	now := time.Now()
+	switch {
+	case capacity <= 0 || capacity < oldCapacity:
+		b.enterPhaseLocked(PhaseDraining, now)
+	case capacity > oldCapacity && b.healthy && now.After(b.passiveUntil):
+		b.enterPhaseLocked(PhaseRecovering, now)
+	}
+	b.lastUpdated = now
 	b.mu.Unlock()
 	return nil
 }
 
 func (b *Backend) setHealth(healthy bool) {
 	b.mu.Lock()
+	now := time.Now()
+	wasUnavailable := !b.healthy || now.Before(b.passiveUntil) || b.phase == PhaseDrained || b.phase == PhaseDraining
 	b.healthy = healthy
 	if healthy {
 		b.passiveUntil = time.Time{}
 		b.consecutiveFailures = 0
 		b.lastError = ""
+		if b.capacity > 0 && wasUnavailable {
+			b.enterPhaseLocked(PhaseRecovering, now)
+		}
+	} else if b.phase != PhaseDrained {
+		b.enterPhaseLocked(PhaseDraining, now)
 	}
-	b.lastHealthProbe = time.Now()
-	b.lastUpdated = time.Now()
+	b.lastHealthProbe = now
+	b.lastUpdated = now
 	b.mu.Unlock()
 }
 
@@ -270,12 +312,14 @@ func (b *Backend) markSuccess() {
 
 func (b *Backend) markFailure(message string) {
 	b.mu.Lock()
+	now := time.Now()
 	b.consecutiveFailures++
 	b.lastError = message
 	if b.consecutiveFailures >= b.passiveFailureThreshold {
-		b.passiveUntil = time.Now().Add(b.passiveEjectDuration)
+		b.passiveUntil = now.Add(b.passiveEjectDuration)
+		b.enterPhaseLocked(PhaseDraining, now)
 	}
-	b.lastUpdated = time.Now()
+	b.lastUpdated = now
 	b.mu.Unlock()
 }
 
@@ -284,7 +328,7 @@ func (b *Backend) refresh(ctx context.Context, client *http.Client, policy LoadP
 		b.probeHealth(ctx, client)
 	}
 	if b.metricsURL != "" {
-		b.scrapeMetrics(ctx, client, policy.EWMAAlpha)
+		b.scrapeMetrics(ctx, client, policy)
 	}
 	b.recomputeWeight(policy, smoothStep)
 }
@@ -313,20 +357,27 @@ func (b *Backend) probeHealth(ctx context.Context, client *http.Client) {
 
 func (b *Backend) setProbeHealth(healthy bool, message string) {
 	b.mu.Lock()
+	now := time.Now()
 	b.healthy = healthy
 	if healthy {
 		b.consecutiveFailures = 0
 		b.passiveUntil = time.Time{}
 		b.lastError = ""
+		if b.capacity > 0 && (b.phase == PhaseDrained || b.phase == PhaseDraining) {
+			b.enterPhaseLocked(PhaseRecovering, now)
+		}
 	} else {
 		b.lastError = message
+		if b.phase != PhaseDrained {
+			b.enterPhaseLocked(PhaseDraining, now)
+		}
 	}
-	b.lastHealthProbe = time.Now()
-	b.lastUpdated = time.Now()
+	b.lastHealthProbe = now
+	b.lastUpdated = now
 	b.mu.Unlock()
 }
 
-func (b *Backend) scrapeMetrics(ctx context.Context, client *http.Client, alpha float64) {
+func (b *Backend) scrapeMetrics(ctx context.Context, client *http.Client, policy LoadPolicy) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.metricsURL, nil)
 	if err != nil {
 		b.markTelemetryError(fmt.Sprintf("metrics request: %v", err))
@@ -352,8 +403,9 @@ func (b *Backend) scrapeMetrics(ctx context.Context, client *http.Client, alpha 
 		return
 	}
 
-	sample := parseMetricsSample(data)
+	sample := parseMetricsSample(data, policy)
 	b.mu.Lock()
+	alpha := policy.EWMAAlpha
 	if alpha <= 0 || alpha > 1 {
 		alpha = 0.35
 	}
@@ -366,6 +418,14 @@ func (b *Backend) scrapeMetrics(ctx context.Context, client *http.Client, alpha 
 		b.queueDepth = sample.queueDepth
 	} else {
 		b.queueDepth = alpha*sample.queueDepth + (1-alpha)*b.queueDepth
+	}
+	if b.kvCacheUsage == 0 {
+		b.kvCacheUsage = sample.kvCache
+	} else {
+		b.kvCacheUsage = alpha*sample.kvCache + (1-alpha)*b.kvCacheUsage
+	}
+	if sample.latencyMS > 0 {
+		b.updateLatencyEWMALocked(sample.latencyMS, alpha)
 	}
 	b.lastMetricsProbe = time.Now()
 	b.lastUpdated = time.Now()
@@ -380,15 +440,15 @@ func (b *Backend) markTelemetryError(message string) {
 	b.mu.Unlock()
 }
 
-func parseMetricsSample(data []byte) metricsSample {
+func parseMetricsSample(data []byte, policy LoadPolicy) metricsSample {
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "{") {
-		return parseJSONMetrics([]byte(trimmed))
+		return parseJSONMetrics([]byte(trimmed), policy)
 	}
-	return parsePrometheusMetrics(trimmed)
+	return parsePrometheusMetrics(trimmed, policy)
 }
 
-func parseJSONMetrics(data []byte) metricsSample {
+func parseJSONMetrics(data []byte, policy LoadPolicy) metricsSample {
 	var raw map[string]float64
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return metricsSample{}
@@ -398,16 +458,20 @@ func parseJSONMetrics(data []byte) metricsSample {
 	for key, value := range raw {
 		key = strings.ToLower(key)
 		switch {
-		case strings.Contains(key, "util"):
-			sample.utilization = math.Max(sample.utilization, normalizeRatio(value))
+		case looksLikeKVCacheMetric(key):
+			sample.kvCache = math.Max(sample.kvCache, normalizeKVCacheMetric(key, value, policy.KVCacheSoftLimit))
+		case looksLikeLatencyMetric(key):
+			sample.latencyMS = math.Max(sample.latencyMS, normalizeLatencyMillis(key, value))
 		case strings.Contains(key, "queue") || strings.Contains(key, "waiting"):
 			sample.queueDepth = math.Max(sample.queueDepth, value)
+		case strings.Contains(key, "util"):
+			sample.utilization = math.Max(sample.utilization, normalizeRatio(value))
 		}
 	}
 	return sample
 }
 
-func parsePrometheusMetrics(text string) metricsSample {
+func parsePrometheusMetrics(text string, policy LoadPolicy) metricsSample {
 	scanner := bufio.NewScanner(strings.NewReader(text))
 	sample := metricsSample{}
 	for scanner.Scan() {
@@ -427,6 +491,10 @@ func parsePrometheusMetrics(text string) metricsSample {
 		}
 
 		switch {
+		case looksLikeKVCacheMetric(name):
+			sample.kvCache = math.Max(sample.kvCache, normalizeKVCacheMetric(name, value, policy.KVCacheSoftLimit))
+		case looksLikeLatencyMetric(name):
+			sample.latencyMS = math.Max(sample.latencyMS, normalizeLatencyMillis(name, value))
 		case looksLikeUtilizationMetric(name):
 			sample.utilization = math.Max(sample.utilization, normalizeRatio(value))
 		case looksLikeQueueMetric(name):
@@ -447,6 +515,9 @@ func looksLikeUtilizationMetric(name string) bool {
 	if strings.Contains(name, "memory") || strings.Contains(name, "hbm") {
 		return false
 	}
+	if looksLikeKVCacheMetric(name) || looksLikeLatencyMetric(name) {
+		return false
+	}
 	return strings.Contains(name, "npu_util") ||
 		strings.Contains(name, "ai_core_util") ||
 		strings.Contains(name, "aicore_util") ||
@@ -462,6 +533,26 @@ func looksLikeQueueMetric(name string) bool {
 		strings.Contains(name, "pending_requests")
 }
 
+func looksLikeKVCacheMetric(name string) bool {
+	return strings.Contains(name, "kv_cache") ||
+		strings.Contains(name, "kvcache") ||
+		strings.Contains(name, "cache_block")
+}
+
+func looksLikeLatencyMetric(name string) bool {
+	if strings.HasSuffix(name, "_bucket") ||
+		strings.HasSuffix(name, "_count") ||
+		strings.HasSuffix(name, "_sum") {
+		return false
+	}
+	return strings.Contains(name, "latency") ||
+		strings.Contains(name, "duration") ||
+		strings.Contains(name, "ttft") ||
+		strings.Contains(name, "time_to_first_token") ||
+		strings.Contains(name, "decode_time") ||
+		strings.Contains(name, "prefill_time")
+}
+
 func normalizeRatio(value float64) float64 {
 	if value > 1 {
 		value = value / 100
@@ -469,46 +560,164 @@ func normalizeRatio(value float64) float64 {
 	return clamp(value, 0, 1)
 }
 
+func normalizeKVCacheMetric(name string, value, softLimit float64) float64 {
+	if strings.Contains(name, "ratio") ||
+		strings.Contains(name, "rate") ||
+		strings.Contains(name, "percent") ||
+		strings.Contains(name, "util") {
+		return normalizeRatio(value)
+	}
+	if softLimit > 1 {
+		return clamp(value/softLimit, 0, 1)
+	}
+	return normalizeRatio(value)
+}
+
+func normalizeLatencyMillis(name string, value float64) float64 {
+	if strings.Contains(name, "seconds") || strings.HasSuffix(name, "_s") {
+		return value * 1000
+	}
+	return value
+}
+
 func (b *Backend) recomputeWeight(policy LoadPolicy, smoothStep float64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	now := time.Now()
-	eligible := b.healthy && now.After(b.passiveUntil)
-	desired := 0.0
-	if eligible {
-		inflightRatio := 0.0
-		if b.maxInflight > 0 {
-			inflightRatio = clamp(float64(atomic.LoadInt64(&b.inflight))/float64(b.maxInflight), 0, 1)
+	inflight := atomic.LoadInt64(&b.inflight)
+	eligible := b.healthy && now.After(b.passiveUntil) && b.capacity > 0
+	desired := b.desiredWeightLocked(policy, eligible, inflight)
+
+	if !eligible {
+		desired = 0
+		if b.effectiveWeight <= weightEpsilon && inflight == 0 {
+			b.enterPhaseLocked(PhaseDrained, now)
+		} else if b.phase != PhaseDrained {
+			b.enterPhaseLocked(PhaseDraining, now)
 		}
-		queueRatio := clamp(b.queueDepth/policy.QueueSoftLimit, 0, 1)
-		loadScore := weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio)
-		headroom := 1 - clamp(loadScore, 0, 1)
-		if headroom < policy.MinHealthyFraction {
-			headroom = policy.MinHealthyFraction
+	} else {
+		switch b.phase {
+		case PhaseDrained:
+			b.enterPhaseLocked(PhaseRecovering, now)
+			desired *= b.slowStartProgressLocked(now)
+		case PhaseRecovering:
+			progress := b.slowStartProgressLocked(now)
+			desired *= progress
+			if progress >= 1 {
+				b.enterPhaseLocked(PhaseActive, now)
+			}
+		case PhaseDraining:
+			if weightsClose(b.effectiveWeight, desired) {
+				b.enterPhaseLocked(PhaseActive, now)
+			}
+		case "":
+			b.enterPhaseLocked(PhaseActive, now)
 		}
-		if b.maxInflight > 0 && atomic.LoadInt64(&b.inflight) >= b.maxInflight {
-			headroom = 0
-		}
-		desired = b.capacity * headroom
 	}
 
 	b.desiredWeight = desired
 	b.effectiveWeight += (desired - b.effectiveWeight) * smoothStep
-	if b.effectiveWeight < 0.0001 {
+	if b.effectiveWeight < weightEpsilon {
 		b.effectiveWeight = 0
+	}
+	if !eligible && b.effectiveWeight == 0 && inflight == 0 {
+		b.enterPhaseLocked(PhaseDrained, now)
+	}
+	if eligible && b.phase == PhaseDraining && weightsClose(b.effectiveWeight, desired) {
+		b.enterPhaseLocked(PhaseActive, now)
 	}
 	b.lastUpdated = now
 }
 
-func weightedLoadScore(policy LoadPolicy, utilRatio, queueRatio, inflightRatio float64) float64 {
-	total := policy.UtilizationWeight + policy.QueueWeight + policy.InflightWeight
+func (b *Backend) desiredWeightLocked(policy LoadPolicy, eligible bool, inflight int64) float64 {
+	if !eligible {
+		return 0
+	}
+	inflightRatio := 0.0
+	if b.maxInflight > 0 {
+		inflightRatio = clamp(float64(inflight)/float64(b.maxInflight), 0, 1)
+	}
+	queueRatio := clamp(b.queueDepth/policy.QueueSoftLimit, 0, 1)
+	latencyRatio := clamp(b.latencyEWMA/policy.LatencySLOMillis, 0, 1)
+	loadScore := weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, latencyRatio)
+	headroom := 1 - clamp(loadScore, 0, 1)
+	if headroom < policy.MinHealthyFraction {
+		headroom = policy.MinHealthyFraction
+	}
+	if b.maxInflight > 0 && inflight >= b.maxInflight {
+		headroom = 0
+	}
+	return b.capacity * headroom
+}
+
+func (b *Backend) p2cLoadScore(policy LoadPolicy) float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	inflightRatio := 0.0
+	if b.maxInflight > 0 {
+		inflightRatio = clamp(float64(atomic.LoadInt64(&b.inflight))/float64(b.maxInflight), 0, 1)
+	}
+	queueRatio := clamp(b.queueDepth/policy.QueueSoftLimit, 0, 1)
+	latencyRatio := clamp(b.latencyEWMA/policy.LatencySLOMillis, 0, 1)
+	return weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, latencyRatio)
+}
+
+func (b *Backend) updateLatencyEWMALocked(latencyMillis, alpha float64) {
+	if latencyMillis <= 0 {
+		return
+	}
+	if alpha <= 0 || alpha > 1 {
+		alpha = 0.25
+	}
+	if b.latencyEWMA == 0 {
+		b.latencyEWMA = latencyMillis
+	} else {
+		b.latencyEWMA = alpha*latencyMillis + (1-alpha)*b.latencyEWMA
+	}
+}
+
+func (b *Backend) enterPhaseLocked(phase BackendPhase, now time.Time) {
+	if b.phase == phase {
+		return
+	}
+	b.phase = phase
+	b.phaseSince = now
+}
+
+func (b *Backend) slowStartProgressLocked(now time.Time) float64 {
+	if b.phase != PhaseRecovering {
+		if b.phase == PhaseActive {
+			return 1
+		}
+		return 0
+	}
+	if b.slowStartDuration <= 0 {
+		return 1
+	}
+	return clamp(float64(now.Sub(b.phaseSince))/float64(b.slowStartDuration), 0, 1)
+}
+
+func weightsClose(a, b float64) bool {
+	diff := math.Abs(a - b)
+	return diff <= math.Max(0.05, math.Max(a, b)*0.05)
+}
+
+func weightedLoadScore(policy LoadPolicy, utilRatio, queueRatio, inflightRatio, kvCacheRatio, latencyRatio float64) float64 {
+	total := policy.UtilizationWeight +
+		policy.QueueWeight +
+		policy.InflightWeight +
+		policy.KVCacheWeight +
+		policy.LatencyWeight
 	if total <= 0 {
 		return 0
 	}
 	return (policy.UtilizationWeight*utilRatio +
 		policy.QueueWeight*queueRatio +
-		policy.InflightWeight*inflightRatio) / total
+		policy.InflightWeight*inflightRatio +
+		policy.KVCacheWeight*kvCacheRatio +
+		policy.LatencyWeight*latencyRatio) / total
 }
 
 func clamp(value, low, high float64) float64 {

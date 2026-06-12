@@ -99,7 +99,9 @@ func (rt *Router) ProxyHandler() http.Handler {
 
 		start := time.Now()
 		w.Header().Set("X-Router-Backend", backend.ID())
-		defer backend.release(time.Since(start))
+		defer func() {
+			backend.release(time.Since(start))
+		}()
 		backend.Proxy().ServeHTTP(w, req)
 	})
 }
@@ -236,12 +238,15 @@ func (rt *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	for _, pool := range state.Pools {
 		for _, backend := range pool.Backends {
 			fmt.Fprintf(w, "router_backend_capacity{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.Capacity)
+			fmt.Fprintf(w, "router_backend_phase{pool=%q,backend=%q,phase=%q} 1\n", pool.Name, backend.ID, backend.Phase)
+			fmt.Fprintf(w, "router_backend_slow_start_progress{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.SlowStartProgress)
 			fmt.Fprintf(w, "router_backend_desired_weight{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.DesiredWeight)
 			fmt.Fprintf(w, "router_backend_effective_weight{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.EffectiveWeight)
 			fmt.Fprintf(w, "router_backend_inflight{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, backend.Inflight)
 			fmt.Fprintf(w, "router_backend_healthy{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.Healthy && !backend.PassiveEjected))
 			fmt.Fprintf(w, "router_backend_remote_utilization{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.RemoteUtilization)
 			fmt.Fprintf(w, "router_backend_queue_depth{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.QueueDepth)
+			fmt.Fprintf(w, "router_backend_kv_cache_usage{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.KVCacheUsage)
 			fmt.Fprintf(w, "router_backend_latency_ewma_ms{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.LatencyEWMAMillis)
 		}
 	}

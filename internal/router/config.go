@@ -39,10 +39,16 @@ type Config struct {
 	UpdateInterval          Duration     `json:"update_interval"`
 	ProbeTimeout            Duration     `json:"probe_timeout"`
 	SmoothStep              float64      `json:"smooth_step"`
+	SlowStartDuration       Duration     `json:"slow_start_duration"`
 	PassiveFailureThreshold int          `json:"passive_failure_threshold"`
 	PassiveEjectDuration    Duration     `json:"passive_eject_duration"`
+	Scheduler               Scheduler    `json:"scheduler"`
 	Load                    LoadPolicy   `json:"load"`
 	Pools                   []PoolConfig `json:"pools"`
+}
+
+type Scheduler struct {
+	Mode string `json:"mode"`
 }
 
 type LoadPolicy struct {
@@ -50,7 +56,11 @@ type LoadPolicy struct {
 	UtilizationWeight  float64 `json:"utilization_weight"`
 	QueueWeight        float64 `json:"queue_weight"`
 	InflightWeight     float64 `json:"inflight_weight"`
+	KVCacheWeight      float64 `json:"kv_cache_weight"`
+	LatencyWeight      float64 `json:"latency_weight"`
 	QueueSoftLimit     float64 `json:"queue_soft_limit"`
+	KVCacheSoftLimit   float64 `json:"kv_cache_soft_limit"`
+	LatencySLOMillis   float64 `json:"latency_slo_ms"`
 	MinHealthyFraction float64 `json:"min_healthy_fraction"`
 }
 
@@ -105,22 +115,40 @@ func (cfg *Config) applyDefaults() {
 	if cfg.SmoothStep <= 0 || cfg.SmoothStep > 1 {
 		cfg.SmoothStep = 0.25
 	}
+	if cfg.SlowStartDuration.Duration <= 0 {
+		cfg.SlowStartDuration.Duration = 15 * time.Second
+	}
 	if cfg.PassiveFailureThreshold <= 0 {
 		cfg.PassiveFailureThreshold = 3
 	}
 	if cfg.PassiveEjectDuration.Duration <= 0 {
 		cfg.PassiveEjectDuration.Duration = 5 * time.Second
 	}
+	if cfg.Scheduler.Mode == "" {
+		cfg.Scheduler.Mode = "p2c_smooth_wrr"
+	}
 	if cfg.Load.EWMAAlpha <= 0 || cfg.Load.EWMAAlpha > 1 {
 		cfg.Load.EWMAAlpha = 0.35
 	}
-	if cfg.Load.UtilizationWeight <= 0 && cfg.Load.QueueWeight <= 0 && cfg.Load.InflightWeight <= 0 {
-		cfg.Load.UtilizationWeight = 0.65
-		cfg.Load.QueueWeight = 0.25
-		cfg.Load.InflightWeight = 0.10
+	if cfg.Load.UtilizationWeight <= 0 &&
+		cfg.Load.QueueWeight <= 0 &&
+		cfg.Load.InflightWeight <= 0 &&
+		cfg.Load.KVCacheWeight <= 0 &&
+		cfg.Load.LatencyWeight <= 0 {
+		cfg.Load.UtilizationWeight = 0.45
+		cfg.Load.QueueWeight = 0.20
+		cfg.Load.InflightWeight = 0.15
+		cfg.Load.KVCacheWeight = 0.10
+		cfg.Load.LatencyWeight = 0.10
 	}
 	if cfg.Load.QueueSoftLimit <= 0 {
 		cfg.Load.QueueSoftLimit = 32
+	}
+	if cfg.Load.KVCacheSoftLimit <= 0 {
+		cfg.Load.KVCacheSoftLimit = 1
+	}
+	if cfg.Load.LatencySLOMillis <= 0 {
+		cfg.Load.LatencySLOMillis = 2000
 	}
 	if cfg.Load.MinHealthyFraction < 0 || cfg.Load.MinHealthyFraction > 0.5 {
 		cfg.Load.MinHealthyFraction = 0.03
@@ -130,6 +158,11 @@ func (cfg *Config) applyDefaults() {
 func (cfg Config) validate() error {
 	if len(cfg.Pools) == 0 {
 		return fmt.Errorf("at least one pool is required")
+	}
+	switch cfg.Scheduler.Mode {
+	case "swrr", "p2c_smooth_wrr":
+	default:
+		return fmt.Errorf("unsupported scheduler mode %q", cfg.Scheduler.Mode)
 	}
 
 	seenPools := make(map[string]struct{}, len(cfg.Pools))
@@ -160,7 +193,7 @@ func (cfg Config) validate() error {
 			seenBackends[backend.ID] = struct{}{}
 
 			if backend.Capacity <= 0 {
-				return fmt.Errorf("backend %q capacity must be > 0", backend.ID)
+				return fmt.Errorf("backend %q capacity must be > 0 at startup", backend.ID)
 			}
 			if backend.MaxInflight < 0 {
 				return fmt.Errorf("backend %q max_inflight must be >= 0", backend.ID)
