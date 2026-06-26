@@ -1,145 +1,77 @@
 # Experiment Plan
 
-This document defines the validation plan for Track 2: dynamic load-aware
-scheduling for large-model inference compute resources.
+本计划对应当前真实 NPU 实验脚本。详细操作见 [`runbook.md`](runbook.md)，结果见 [`experiment-results.md`](experiment-results.md)。
 
 ## Goal
 
-Validate that `suan-router` improves request scheduling for Ascend NPU inference
-clusters under dynamic backend health, load, and capacity changes.
+验证 `suan-router` 在真实 Ascend NPU 推理集群中的动态调度能力：
 
-The key claim is:
+- 正常均衡场景下，动态调度没有明显额外开销；
+- capacity 10->1->10 时，新请求平滑迁移，已分配请求不中断；
+- backend 故障时自动摘除，恢复后 slow-start；
+- 多资源池并发时隔离有效；
+- smoothStep 参数选择有真实数据支撑。
 
-- static round-robin keeps sending traffic to hot or degraded backends;
-- `p2c_smooth_wrr` uses backend health, queue depth, local inflight, KV cache,
-  latency, and capacity to adjust effective weights dynamically;
-- capacity decreases such as `10 -> 1` are smoothed, so new traffic migrates
-  gradually and in-flight requests are not interrupted.
+## Testbed
 
-## Remote Testbed
+| 资源 | 配置 |
+|---|---|
+| Host | `kunlun-02-act` |
+| Router container | `yijq27-cann851` |
+| Model | `Qwen/Qwen2.5-1.5B-Instruct` |
+| Real backends | NPU 3/4/5/6/7 |
+| Router ports | `8180` / `8181` |
 
-- Host: `kunlun-02-act`
-- Router container: `yijq27-cann851`
-- vLLM image: `quay.io/ascend/vllm-ascend:v0.18.0rc1`
-- Model for experiments: `Qwen/Qwen2.5-1.5B-Instruct`
-- Model path: `/home/yijq27/workspace/models/Qwen2.5-1.5B-Instruct`
-- Experiment router data plane: `http://127.0.0.1:8180`
-- Experiment router admin plane: `http://127.0.0.1:8181`
+正式数据目录：
 
-NPU allocation must be checked before every run. Do not stop containers or
-processes that are not owned by the current experiment. If another user's job is
-visible in `npu-smi`, choose different NPU IDs.
+```text
+bench/results/real-npu-20260627021640/
+```
 
-The current experiment uses:
+## Experiments
 
-- `qwen15b-npu3`: NPU 3, vLLM port `9021`
-- `qwen15b-npu4`: NPU 4, vLLM port `9022`
-
-NPU 2 is intentionally avoided because it has an existing non-experiment
-process.
-
-## Compared Schedulers
-
-### Static Baseline
-
-Config: `config/router.qwen15b-static-swrr.example.json`
-
-This uses smooth weighted round-robin with static startup capacity. It keeps
-health checks, but omits backend metrics URLs, so it does not dynamically react
-to vLLM queue, KV cache, or latency metrics.
-
-### Load-Aware Router
-
-Config: `config/router.qwen15b-p2c.example.json`
-
-This uses `p2c_smooth_wrr` and reads vLLM `/metrics`. The scheduler combines
-smooth effective weights with power-of-two choices and local/remote load
-signals.
+| 实验 | 脚本 | 目的 | 验收口径 |
+|---|---|---|---|
+| exp1 | `scripts/run_experiment1.sh` | 均衡场景开销 | `p2c_smooth_wrr` 与 `swrr` QPS/p99 接近，0 错误 |
+| exp2 | `scripts/run_experiment2_real.sh` | 外部真实压力边界 | 记录 NPU3 占比；若 vLLM 指标未形成热点，不宣称避让优势 |
+| exp3 | `scripts/run_experiment3.sh` | capacity 平滑迁移 | stable down 占比接近 2.44%，0 错误 |
+| exp4 | `scripts/run_experiment4.sh` | 真实故障恢复 | 只 stop/start `yijq27-vllm-qwen15b-5`，fail stable 占比接近 0 |
+| exp5 | `scripts/run_experiment5_noisy.sh` | 资源池隔离 | default 池在 isolated 高压下 0 错误 |
+| exp6 | `scripts/run_experiment6.sh` | 综合剧本 | 作为演示，不替代分窗口核心实验 |
+| exp7 | `scripts/run_smoothstep_experiment.sh` | smoothStep 参数 | 比较 0.1/0.25/0.5/1.0 的收敛和平滑性 |
 
 ## Metrics
 
-Collect these metrics for each run:
+- requests / errors / error rate；
+- QPS；
+- p50 / p95 / p99；
+- per-backend request share；
+- `/admin/state` 中的 phase、capacity、desired/effective weight、inflight；
+- `/metrics` 中的 router 状态；
+- vLLM metrics 采样用于综合剧本辅助分析。
 
-- total requests
-- success rate
-- throughput/QPS
-- p50 latency
-- p95 latency
-- p99 latency
-- backend request distribution from `X-Router-Backend`
-- `/admin/state` snapshots: `phase`, `capacity`, `desired_weight`,
-  `effective_weight`, `queue_depth`, `latency_ewma_ms`
-
-## Experiment A: Balanced Backends
-
-Purpose: show that load-aware scheduling has no significant overhead when both
-backends are healthy and symmetric.
-
-Run the same load against the static baseline and the load-aware router:
+## Reproduction
 
 ```bash
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8180/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body '{"model":"qwen2.5-1.5b-instruct","messages":[{"role":"user","content":"Reply with pong only."}],"max_tokens":16,"temperature":0}' \
-  --duration 60 \
-  --concurrency 16 \
-  --timeout 90 \
-  --output bench/results/qwen15b-balanced-p2c.csv
+cd /home/yijq27/workspace/Track1_fuiglwgfnq_repos
+RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
+  scripts/run_real_npu_suite.sh
 ```
 
-Expected result: both schedulers produce similar throughput and latency, and the
-backend distribution is close to even.
-
-## Experiment B: Dynamic Capacity Drop
-
-Purpose: validate the required `capacity 10 -> 1` smooth transition.
-
-Start load generation, then inject a capacity drop and recovery:
+生成汇总：
 
 ```bash
-python3 bench/inject_capacity.py \
-  --admin http://127.0.0.1:8181 \
-  --event 20,default,qwen15b-npu3,1 \
-  --event 50,default,qwen15b-npu3,10
+python3 bench/generate_summary.py \
+  --results-dir bench/results/real-npu-20260627021640 \
+  --output-dir bench/results/real-npu-20260627021640/analysis
 ```
 
-Expected result:
+## Current Outcome
 
-- `qwen15b-npu3.desired_weight` drops quickly after the event;
-- `qwen15b-npu3.effective_weight` decreases smoothly instead of jumping;
-- request share shifts from `qwen15b-npu3` to `qwen15b-npu4`;
-- existing requests finish normally;
-- after recovery, the backend enters `recovering`/slow-start before becoming
-  fully active.
+- exp1：`p2c_smooth_wrr` 246.46 QPS，`swrr` 247.41 QPS，均 0 错误。
+- exp3：NPU3 stable down 2.37%，理论 2.44%，29,748 请求 0 错误。
+- exp4：NPU5 fail stable 0.02%，recovery end 19.80%，72,794 请求 3 错误。
+- exp5：default 池 28,218 请求 0 错误，isolated 池 1,592 请求 0 错误。
+- exp7：smoothStep=0.25 stable down 2.31%，误差 0.13pp。
 
-## Experiment C: Hot Backend
-
-Purpose: show that load-aware scheduling reduces hotspot effects.
-
-Create direct background pressure on `qwen15b-npu3`, then send measured traffic
-through the router. Compare static baseline and load-aware router.
-
-Expected result:
-
-- static SWRR keeps routing a large share to the hot backend;
-- `p2c_smooth_wrr` lowers the hot backend selection probability;
-- p95/p99 latency and timeout rate are lower with `p2c_smooth_wrr`.
-
-## Analysis
-
-Use `bench/plot_results.py` for second-level summaries and plots:
-
-```bash
-python3 bench/plot_results.py \
-  --input bench/results/qwen15b-balanced-p2c.csv \
-  --output bench/results/qwen15b-balanced-p2c.png
-```
-
-For the submission report, include:
-
-- one table comparing baseline and load-aware runs;
-- one timeline plot for dynamic capacity drop;
-- one `/admin/state` snapshot before, during, and after capacity change;
-- one command transcript showing real Ascend NPU vLLM backends and router
-  responses with `X-Router-Backend`.
+exp2 当前结论是边界：真实 external direct pressure 没有在 vLLM 指标中形成明显热点，所以不能把它写成优势证明。

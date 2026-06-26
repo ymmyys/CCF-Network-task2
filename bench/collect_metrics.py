@@ -98,6 +98,7 @@ def collect_router_state(admin_url):
 def main():
     parser = argparse.ArgumentParser(description='增强版指标采集器')
     parser.add_argument('--vllm-urls', required=True, help='vLLM指标URL，逗号分隔')
+    parser.add_argument('--backend-ids', default='', help='backend ID，逗号分隔；为空时使用backend-0等默认名')
     parser.add_argument('--admin-url', default='http://127.0.0.1:8181', help='Router管理URL')
     parser.add_argument('--output', required=True, help='输出CSV文件')
     parser.add_argument('--interval', type=float, default=1.0, help='采集间隔(秒)')
@@ -105,6 +106,7 @@ def main():
     args = parser.parse_args()
     
     vllm_urls = args.vllm_urls.split(',')
+    backend_ids = [item.strip() for item in args.backend_ids.split(',') if item.strip()]
     
     with open(args.output, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -130,16 +132,19 @@ def main():
             
             # 采集每个vLLM后端指标
             for i, url in enumerate(vllm_urls):
-                backend_id = f"backend-{i}"
+                backend_id = backend_ids[i] if i < len(backend_ids) else f"backend-{i}"
                 metrics = collect_vllm_metrics(url)
                 
                 if 'error' not in metrics:
                     # 从router状态中提取对应后端信息
                     router_info = {}
                     if 'pools' in router_state:
+                        backend_base_url = url.rstrip('/')
+                        if backend_base_url.endswith('/metrics'):
+                            backend_base_url = backend_base_url[:-len('/metrics')]
                         for pool in router_state['pools']:
                             for backend in pool.get('backends', []):
-                                if backend.get('url', '').rstrip('/') == url.rstrip('/'):
+                                if backend.get('url', '').rstrip('/') == backend_base_url:
                                     router_info = {
                                         'phase': backend.get('phase', ''),
                                         'capacity': backend.get('capacity', 0),

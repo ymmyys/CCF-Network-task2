@@ -1,194 +1,303 @@
 #!/usr/bin/env python3
-"""生成所有实验的最终 summary"""
-import csv, json, os
-from collections import defaultdict
+"""Generate real-NPU experiment summaries.
 
-RESULT_DIR = 'bench/results'
-OUTPUT_DIR = 'analysis-output'
+The formal report consumes only CSV files produced by real Ascend NPU scripts.
+Fake-backend fixtures are intentionally not part of this summary.
+"""
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+import argparse
+import csv
+import math
+from collections import Counter, defaultdict
+from pathlib import Path
 
-def load_csv(path):
-    rows = []
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            rows.append(row)
-    return rows
 
-def per_second(rows, ts_field='ts', backend_field='backend', latency_field='latency_ms',
-               status_field='status', error_field='error'):
-    if not rows: return {}
-    st = float(rows[0][ts_field])
-    ps = defaultdict(lambda: {'backends': defaultdict(int), 'latencies': [], 'errors': 0, 'total': 0})
-    for r in rows:
-        s = int(float(r[ts_field]) - st)
-        b = r.get(backend_field, '')
-        ps[s]['backends'][b] += 1
-        ps[s]['total'] += 1
-        if r.get(status_field) == '200' and not r.get(error_field):
-            ps[s]['latencies'].append(float(r.get(latency_field, 0)))
-        else:
-            ps[s]['errors'] += 1
-    return ps
-
-def window_stats(ps, start, end, backend_filter=None):
-    total = errors = 0
-    lats = []
-    backends = defaultdict(int)
-    for s in range(start, end):
-        if s in ps:
-            d = ps[s]
-            total += d['total']
-            errors += d['errors']
-            lats.extend(d['latencies'])
-            for bk, cnt in d['backends'].items():
-                backends[bk] += cnt
-    lats.sort()
-    n = len(lats)
-    r = {
-        'total': total, 'errors': errors,
-        'error_rate': round(errors/total*100, 4) if total > 0 else 0,
-        'p50': round(lats[int(n*0.5)], 2) if n > 0 else 0,
-        'p95': round(lats[int(n*0.95)], 2) if n > 0 else 0,
-        'p99': round(lats[int(n*0.99)], 2) if n > 0 else 0,
-        'backends': {bk: {'count': cnt, 'pct': round(cnt/total*100, 2) if total > 0 else 0} 
-                     for bk, cnt in backends.items()}
-    }
-    if backend_filter:
-        r['target_count'] = backends.get(backend_filter, 0)
-        r['target_pct'] = round(r['target_count']/total*100, 2) if total > 0 else 0
-    return r
-
-# ==================== Exp1 ====================
-print("Processing exp1...")
-summaries = []
-for name, sched in [('exp1-direct-vllm', 'direct'), ('exp1-router-swrr', 'swrr'), ('exp1-router-p2c', 'p2c_smooth_wrr')]:
-    rows = load_csv(f'{RESULT_DIR}/{name}.csv')
-    ps = per_second(rows)
-    ws = window_stats(ps, 0, 60)
-    summaries.append({
-        'experiment_id': 'exp1',
-        'scheduler': sched,
-        'total_requests': ws['total'],
-        'total_errors': ws['errors'],
-        'error_rate': ws['error_rate'],
-        'p50_ms': ws['p50'],
-        'p95_ms': ws['p95'],
-        'p99_ms': ws['p99'],
-        'main_conclusion': 'p2c开销<2%' if sched == 'p2c_smooth_wrr' else ('swrr基线' if sched == 'swrr' else '单后端基线'),
-        'notes': 'direct=1后端, router=2后端, 不可直接比较QPS' if sched == 'direct' else ''
-    })
-
-# ==================== Exp2 ====================
-print("Processing exp2...")
-for name, sched in [('exp2-het-swrr', 'swrr'), ('exp2-het-p2c', 'p2c_smooth_wrr')]:
-    rows = load_csv(f'{RESULT_DIR}/{name}.csv')
-    ps = per_second(rows)
-    ws = window_stats(ps, 0, 60, 'slow-fake')
-    summaries.append({
-        'experiment_id': 'exp2',
-        'scheduler': sched,
-        'total_requests': ws['total'],
-        'total_errors': ws['errors'],
-        'error_rate': ws['error_rate'],
-        'p50_ms': ws['p50'],
-        'p95_ms': ws['p95'],
-        'p99_ms': ws['p99'],
-        'target_backend': 'slow-fake',
-        'target_share_pct': ws.get('target_pct', 0),
-        'expected_share': 50.0 if sched == 'swrr' else 0.0,
-        'main_conclusion': 'P2C完全避开慢节点' if sched == 'p2c_smooth_wrr' else 'swrr 50/50分布',
-        'notes': 'fast=vLLM npu3, slow=fake 300ms' if sched == 'p2c_smooth_wrr' else ''
-    })
-
-# ==================== Exp3 ====================
-print("Processing exp3...")
-rows = load_csv(f'{RESULT_DIR}/exp3-capacity-drop.csv')
-ps = per_second(rows)
-pre = window_stats(ps, 0, 30, 'qwen15b-npu3')
-post = window_stats(ps, 35, 80, 'qwen15b-npu3')
-recovery = window_stats(ps, 95, 120, 'qwen15b-npu3')
-
-# convergence time: find when npu3 share stabilizes within 1pp of 2.44%
-conv_s = 60
-for t in range(30, 80):
-    w = window_stats(ps, t, t+5, 'qwen15b-npu3')
-    share = w.get('target_pct', 100)
-    if abs(share - 2.44) <= 1.0:
-        conv_s = t - 30
-        break
-
-summaries.append({
-    'experiment_id': 'exp3', 'scheduler': 'p2c_smooth_wrr',
-    'total_requests': sum(ps[s]['total'] for s in ps),
-    'total_errors': sum(ps[s]['errors'] for s in ps),
-    'error_rate': 0,
-    'p50_ms': pre['p50'], 'p95_ms': pre['p95'], 'p99_ms': pre['p99'],
-    'target_backend': 'qwen15b-npu3',
-    'target_share_before': pre.get('target_pct', 0),
-    'target_share_after': post.get('target_pct', 0),
-    'expected_after': 2.44,
-    'absolute_share_error': round(abs(post.get('target_pct', 0) - 2.44), 2),
-    'convergence_time_s': conv_s,
-    'main_conclusion': '降容平滑迁移, 0错误',
-    'notes': f'5后端, npu3 10→1, 恢复占比{recovery.get("target_pct",0)}%'
-})
-
-# ==================== Exp4-fix ====================
-print("Processing exp4-fix...")
-rows = load_csv(f'{RESULT_DIR}/exp4-fix.csv')
-ps2 = per_second(rows)
-pre4 = window_stats(ps2, 0, 30, 'qwen15b-npu5')
-fail = window_stats(ps2, 35, 90, 'qwen15b-npu5')
-rec4 = window_stats(ps2, 250, 300, 'qwen15b-npu5')
-summaries.append({
-    'experiment_id': 'exp4', 'scheduler': 'p2c_smooth_wrr',
-    'total_requests': sum(ps2[s]['total'] for s in ps2),
-    'total_errors': sum(ps2[s]['errors'] for s in ps2),
-    'error_rate': round(sum(ps2[s]['errors'] for s in ps2)/sum(ps2[s]['total'] for s in ps2)*100, 4),
-    'p50_ms': pre4['p50'], 'p95_ms': pre4['p95'], 'p99_ms': pre4['p99'],
-    'target_backend': 'qwen15b-npu5',
-    'target_share_before': pre4.get('target_pct', 0),
-    'target_share_after': fail.get('target_pct', 0),
-    'expected_after': 0.0,
-    'absolute_share_error': fail.get('target_pct', 0),
-    'convergence_time_s': 2,
-    'main_conclusion': '2-3s完全摘除, vLLM恢复需160s',
-    'notes': f'修复后: fail_stable n5=0.0%; 恢复后n5占比{rec4.get("target_pct",0)}%'
-})
-
-# ==================== Exp5 ====================
-print("Processing exp5...")
-rows5 = load_csv(f'{RESULT_DIR}/exp5-pool-default-normal.csv')
-ps5 = per_second(rows5)
-ws5 = window_stats(ps5, 0, 60)
-summaries.append({
-    'experiment_id': 'exp5', 'scheduler': 'p2c_smooth_wrr',
-    'total_requests': ws5['total'],
-    'total_errors': ws5['errors'],
-    'error_rate': ws5['error_rate'],
-    'p50_ms': ws5['p50'], 'p95_ms': ws5['p95'], 'p99_ms': ws5['p99'],
-    'main_conclusion': 'default池不受isolated高压影响',
-    'notes': 'default池0错误, isolated池65k请求'
-})
-
-# ==================== Output ====================
-# Write summary CSV
-fieldnames = [
-    'experiment_id', 'scheduler', 'total_requests', 'total_errors', 'error_rate',
-    'p50_ms', 'p95_ms', 'p99_ms',
-    'target_backend', 'target_share_before', 'target_share_after',
-    'expected_after', 'absolute_share_error', 'convergence_time_s',
-    'main_conclusion', 'notes'
+FIELDS = [
+    "experiment_id",
+    "scheduler",
+    "source_file",
+    "window",
+    "total_requests",
+    "total_errors",
+    "error_rate_pct",
+    "qps",
+    "p50_ms",
+    "p95_ms",
+    "p99_ms",
+    "target_backend",
+    "target_share_pct",
+    "expected_share_pct",
+    "absolute_share_error_pct",
+    "backend_distribution",
+    "main_conclusion",
+    "notes",
 ]
-with open(f'{OUTPUT_DIR}/all_summary.csv', 'w', newline='') as f:
-    w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-    w.writeheader()
-    w.writerows(summaries)
 
-print(f'Written {OUTPUT_DIR}/all_summary.csv with {len(summaries)} rows')
 
-# Print summary
-print()
-for s in summaries:
-    print(f'{s["experiment_id"]:5s} {s["scheduler"]:16s} req={s["total_requests"]:6d} err={s.get("error_rate",0):.4f}%  {s["main_conclusion"]}')
+def load_rows(path):
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8") as file:
+        return list(csv.DictReader(file))
+
+
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def is_success(row):
+    status = str(row.get("status", "0"))
+    error = row.get("error", "")
+    return status.isdigit() and 200 <= int(status) < 300 and not error
+
+
+def percentile(values, pct):
+    if not values:
+        return 0.0
+    values = sorted(values)
+    index = min(len(values) - 1, max(0, math.ceil(len(values) * pct) - 1))
+    return round(values[index], 2)
+
+
+def per_second(rows):
+    if not rows:
+        return {}
+    start = min(safe_float(row.get("ts")) for row in rows)
+    buckets = defaultdict(lambda: {"rows": [], "backends": Counter(), "errors": 0})
+    for row in rows:
+        second = int(safe_float(row.get("ts")) - start)
+        backend = row.get("backend", "")
+        buckets[second]["rows"].append(row)
+        buckets[second]["backends"][backend] += 1
+        if not is_success(row):
+            buckets[second]["errors"] += 1
+    return buckets
+
+
+def window_stats(rows, start_sec=None, end_sec=None, target_backend="", expected_share=None):
+    if not rows:
+        return {
+            "total_requests": 0,
+            "total_errors": 0,
+            "error_rate_pct": 0.0,
+            "qps": 0.0,
+            "p50_ms": 0.0,
+            "p95_ms": 0.0,
+            "p99_ms": 0.0,
+            "target_share_pct": "",
+            "backend_distribution": "",
+            "absolute_share_error_pct": "",
+        }
+
+    selected = rows
+    elapsed = max(safe_float(rows[-1].get("ts")) - safe_float(rows[0].get("ts")), 0.001)
+    if start_sec is not None and end_sec is not None:
+        origin = safe_float(rows[0].get("ts"))
+        selected = [
+            row
+            for row in rows
+            if start_sec <= safe_float(row.get("ts")) - origin < end_sec
+        ]
+        elapsed = max(end_sec - start_sec, 1)
+
+    latencies = [safe_float(row.get("latency_ms")) for row in selected if is_success(row)]
+    errors = sum(1 for row in selected if not is_success(row))
+    backend_counts = Counter(row.get("backend", "") for row in selected)
+    total = len(selected)
+    target_share = ""
+    abs_error = ""
+    if target_backend:
+        target_share = round(backend_counts.get(target_backend, 0) / total * 100, 2) if total else 0.0
+        if expected_share is not None:
+            abs_error = round(abs(target_share - expected_share), 2)
+
+    distribution = ";".join(
+        f"{backend or 'none'}={count}({round(count / total * 100, 2) if total else 0}%)"
+        for backend, count in sorted(backend_counts.items())
+    )
+
+    return {
+        "total_requests": total,
+        "total_errors": errors,
+        "error_rate_pct": round(errors / total * 100, 4) if total else 0.0,
+        "qps": round(total / elapsed, 2),
+        "p50_ms": percentile(latencies, 0.50),
+        "p95_ms": percentile(latencies, 0.95),
+        "p99_ms": percentile(latencies, 0.99),
+        "target_share_pct": target_share,
+        "backend_distribution": distribution,
+        "absolute_share_error_pct": abs_error,
+    }
+
+
+def make_row(results_dir, experiment_id, scheduler, filename, conclusion, notes="", window="all",
+             start_sec=None, end_sec=None, target_backend="", expected_share=None):
+    path = results_dir / filename
+    rows = load_rows(path)
+    stats = window_stats(rows, start_sec, end_sec, target_backend, expected_share)
+    row = {
+        "experiment_id": experiment_id,
+        "scheduler": scheduler,
+        "source_file": filename,
+        "window": window,
+        "target_backend": target_backend,
+        "expected_share_pct": "" if expected_share is None else expected_share,
+        "main_conclusion": conclusion,
+        "notes": notes,
+    }
+    row.update(stats)
+    return row
+
+
+def collect_summaries(results_dir):
+    summaries = []
+
+    for scheduler, filename in [
+        ("direct-npu3", "exp1-real-direct-npu3.csv"),
+        ("swrr", "exp1-real-swrr.csv"),
+        ("p2c_smooth_wrr", "exp1-real-p2c.csv"),
+        ("balanced_p2c", "exp1-real-balanced.csv"),
+    ]:
+        summaries.append(make_row(
+            results_dir, "exp1", scheduler, filename,
+            "real NPU balanced baseline",
+            "direct is a single-backend reference; router rows use five real backends",
+        ))
+
+    for scheduler, filename in [
+        ("swrr", "exp2-real-hotspot-swrr.csv"),
+        ("p2c_smooth_wrr", "exp2-real-hotspot-p2c.csv"),
+        ("balanced_p2c", "exp2-real-hotspot-balanced.csv"),
+    ]:
+        summaries.append(make_row(
+            results_dir, "exp2", scheduler, filename,
+            "real hotspot pressure on qwen15b-npu3",
+            "background pressure is direct long-prompt load against NPU3",
+            target_backend="qwen15b-npu3",
+        ))
+
+    exp3_windows = [
+        ("pre_0_30", 0, 30, None),
+        ("transition_down_30_40", 30, 40, 2.44),
+        ("stable_down_40_80", 40, 80, 2.44),
+        ("transition_up_80_100", 80, 100, None),
+        ("stable_up_100_120", 100, 120, 20.0),
+        ("all", None, None, None),
+    ]
+    for window, start, end, expected in exp3_windows:
+        summaries.append(make_row(
+            results_dir, "exp3", "p2c_smooth_wrr", "exp3-real-capacity-p2c.csv",
+            "capacity 10->1->10 smooth migration",
+            "target backend qwen15b-npu3",
+            window=window,
+            start_sec=start,
+            end_sec=end,
+            target_backend="qwen15b-npu3",
+            expected_share=expected,
+        ))
+
+    exp4_windows = [
+        ("pre_fail_0_30", 0, 30, 20.0),
+        ("fail_detect_30_35", 30, 35, 0.0),
+        ("fail_stable_35_90", 35, 90, 0.0),
+        ("recovery_wait_90_240", 90, 240, 0.0),
+        ("recovery_end_240_300", 240, 300, 20.0),
+        ("all", None, None, None),
+    ]
+    for window, start, end, expected in exp4_windows:
+        summaries.append(make_row(
+            results_dir, "exp4", "p2c_smooth_wrr", "exp4-real-failure-p2c.csv",
+            "npu5 container stop/start fault recovery",
+            "only container yijq27-vllm-qwen15b-5 is stopped",
+            window=window,
+            start_sec=start,
+            end_sec=end,
+            target_backend="qwen15b-npu5",
+            expected_share=expected,
+        ))
+
+    summaries.append(make_row(
+        results_dir, "exp5", "p2c_smooth_wrr", "exp5-real-default.csv",
+        "default pool remains isolated while isolated pool is under pressure",
+        "default pool uses NPU3/4",
+    ))
+    summaries.append(make_row(
+        results_dir, "exp5", "p2c_smooth_wrr", "exp5-real-isolated.csv",
+        "isolated pool noisy-neighbor load runs on real NPU5/6/7",
+        "isolated pool uses NPU5/6/7",
+    ))
+
+    summaries.append(make_row(
+        results_dir, "exp6", "p2c_smooth_wrr", "exp6-real-comprehensive.csv",
+        "combined dynamic capacity, hotspot, fault, and recovery scenario",
+        "demo scenario; interpret with windowed CSV if used in report",
+    ))
+
+    for step in ["0.1", "0.25", "0.5", "1.0"]:
+        for window, start, end, expected in [
+            ("pre_0_20", 0, 20, 20.0),
+            ("transition_down_20_30", 20, 30, 2.44),
+            ("stable_down_30_50", 30, 50, 2.44),
+            ("transition_up_50_65", 50, 65, None),
+            ("stable_up_65_80", 65, 80, 20.0),
+            ("all", None, None, None),
+        ]:
+            summaries.append(make_row(
+                results_dir, "exp7", f"smooth_step={step}", f"exp7-real-ss{step}.csv",
+                "smoothStep sensitivity on five real backends",
+                "target backend qwen15b-npu3",
+                window=window,
+                start_sec=start,
+                end_sec=end,
+                target_backend="qwen15b-npu3",
+                expected_share=expected,
+            ))
+
+    return [row for row in summaries if row["total_requests"]]
+
+
+def write_csv(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_markdown(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as file:
+        file.write("# Real NPU Experiment Summary\n\n")
+        file.write("All rows are generated from real Ascend NPU experiment CSV files. Fake-backend fixture data is excluded.\n\n")
+        file.write("| experiment | scheduler | window | requests | errors | qps | p50 | p95 | p99 | target share | conclusion |\n")
+        file.write("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|\n")
+        for row in rows:
+            target_share = row["target_share_pct"] if row["target_share_pct"] != "" else "-"
+            file.write(
+                f"| {row['experiment_id']} | {row['scheduler']} | {row['window']} | "
+                f"{row['total_requests']} | {row['total_errors']} | {row['qps']} | "
+                f"{row['p50_ms']} | {row['p95_ms']} | {row['p99_ms']} | "
+                f"{target_share} | {row['main_conclusion']} |\n"
+            )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results-dir", default="bench/results")
+    parser.add_argument("--output-dir", default="analysis-output")
+    args = parser.parse_args()
+
+    results_dir = Path(args.results_dir)
+    output_dir = Path(args.output_dir)
+    rows = collect_summaries(results_dir)
+    write_csv(output_dir / "real_npu_summary.csv", rows)
+    write_markdown(output_dir / "real_npu_summary.md", rows)
+    print(f"written {output_dir / 'real_npu_summary.csv'} with {len(rows)} rows")
+    print(f"written {output_dir / 'real_npu_summary.md'}")
+
+
+if __name__ == "__main__":
+    main()

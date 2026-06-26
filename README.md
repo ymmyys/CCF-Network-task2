@@ -1,86 +1,96 @@
 # suan-router
 
-大模型推理算力资源动态负载感知调度 router。数据面用 Go 实现，适合放在推理服务前面做流式反向代理和动态权重调度。
+`suan-router` 是面向赛题 2「大模型推理算力资源动态负载感知调度」的 OpenAI-compatible 推理网关。它运行在 vLLM-Ascend 后端之前，根据后端健康状态、capacity、inflight、vLLM 指标和资源池策略动态选择目标 NPU。
 
-## 核心机制
+## Purpose
+
+赛题要求在 Ascend NPU 推理集群中避免热点、支持动态 capacity 变化、节点故障摘除、多资源池隔离，并在 capacity 从 10 降到 1 时平滑迁移新请求而不中断已分配请求。本项目实现了：
 
 - 资源池隔离：请求头 `X-Resource-Pool` 选择资源池，未指定时进入 `default`。
-- P2C + 平滑加权轮询：默认 `p2c_smooth_wrr`，先按有效权重采样两个候选，再选择当前负载更低的 backend；需要做基线实验时可切换为 `swrr`。
-- 动态目标权重：`capacity * headroom`，其中 `headroom` 来自 NPU 利用率、队列深度、本地 inflight、KV cache 占用和延迟 EWMA。
-- 平滑降权：有效权重按 `effective += (desired - effective) * smooth_step` 逐步靠近目标权重。比如 capacity 从 10 降到 1 时，新请求概率会逐步下降，已分配请求不会被中断。
-- 显式状态机：backend 状态包括 `active`、`draining`、`drained`、`recovering`。降容/摘除时进入 draining，恢复时通过 slow-start 从 recovering 回到 active。
-- 健康与被动熔断：健康检查失败或连续代理错误会暂时摘除 backend，后续探活恢复。
-- 上游错误短暂避让：单次代理错误或 5xx 响应会触发 `failure_cooloff_duration`，在被动熔断阈值前先短暂避开异常后端。
-- Prometheus 兼容：router 会读取 backend 的 Prometheus 指标，也会暴露自身 `/metrics`。
+- 动态权重：`desired_weight = capacity * headroom`，`headroom` 来自 NPU/vLLM 指标和本地 inflight。
+- 平滑迁移：`effective_weight += (desired_weight - effective_weight) * smooth_step`。
+- 调度器：`swrr`、`p2c_smooth_wrr`，以及可选 `balanced_p2c`。
+- 高可用：健康检查、被动熔断、代理错误短暂 cooloff、recovering slow-start。
+- 管理面：`/admin/state`、`/admin/capacity`、`/admin/health`、`/metrics`。
 
-## 运行
+## Architecture
+
+```text
+client
+  |
+  v
+suan-router (:8180 data, :8181 admin)
+  |-- pool=default  -> qwen15b-npu3/4/5/6/7
+  |-- pool=isolated -> configured isolated real NPU pool
+  |
+  v
+vLLM-Ascend containers on Ascend 910B
+```
+
+核心代码：
+
+- `cmd/router/main.go`：启动入口。
+- `internal/router/router.go`：HTTP 代理、管理 API、metrics。
+- `internal/router/scheduler.go`：SWRR、P2C、balanced P2C。
+- `internal/router/backend.go`：状态机、健康检查、指标解析、权重计算。
+
+## Quick Start
+
+本地运行一个示例配置：
 
 ```bash
 go run ./cmd/router -config config/router.example.json
 ```
 
-数据面默认监听 `:8080`，管理面默认监听 `:8081`。
-
-Kunlun-02 上的多 vLLM Ascend 部署流程见
-[`docs/development.md`](docs/development.md)，对应配置样例为
-[`config/router.vllm-ascend.example.json`](config/router.vllm-ascend.example.json)。
-
-赛题 2 的实验验证方案见
-[`docs/experiments.md`](docs/experiments.md)。实验配置包含
-`config/router.qwen15b-p2c.example.json` 和
-`config/router.qwen15b-static-swrr.example.json`，用于对比动态负载感知调度与静态平滑加权轮询。
-可迁移的启动、验证、实验与停止操作手册见
-[`docs/runbook.md`](docs/runbook.md)。
-本次真实昇腾 NPU 实验结果见
-[`docs/experiment-results.md`](docs/experiment-results.md)。
-本轮调度优化、微基准和多模型验证建议见
-[`docs/optimization-and-validation.md`](docs/optimization-and-validation.md)。
-
-## 动态降容演示
-
-把 `ascend-910b-a` 的 capacity 从 10 调到 1：
+Kunlun-02 Ascend 实验环境中，router 在 CANN 容器内构建和运行：
 
 ```bash
-curl -X POST http://127.0.0.1:8081/admin/capacity \
-  -H 'Content-Type: application/json' \
-  -d '{"pool":"default","backend":"ascend-910b-a","capacity":1}'
+docker exec yijq27-cann851 bash -lc '
+  cd /workspace/Track1_fuiglwgfnq_repos &&
+  go build -o /workspace/bin/suan-router ./cmd/router
+'
 ```
 
-查看当前状态：
+完整操作手册见 [`docs/runbook.md`](docs/runbook.md)。
+
+## Real NPU Experiments
+
+最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。实验结果目录：
+
+```text
+bench/results/real-npu-20260627021640/
+```
+
+统一汇总：
+
+```text
+bench/results/real-npu-20260627021640/analysis/real_npu_summary.csv
+bench/results/real-npu-20260627021640/analysis/real_npu_summary.md
+```
+
+一键重跑：
 
 ```bash
-curl http://127.0.0.1:8081/admin/state
+RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
+  scripts/run_real_npu_suite.sh
 ```
 
-观察 `phase` 会进入 `draining`，`desired_weight` 会立即接近新 capacity 对应目标值，`effective_weight` 会按 `smooth_step` 平滑下降。
+安全边界：
 
-## 调度模式
+- 只使用 `yijq27-vllm-qwen15b-3` 到 `yijq27-vllm-qwen15b-7`。
+- 只有故障实验会停止/启动 `yijq27-vllm-qwen15b-5`。
+- router 只通过 PID 文件清理自己启动的进程，不使用宽泛 `pkill`。
 
-默认配置：
+## Current Real Results
 
-```json
-{
-  "scheduler": {
-    "mode": "p2c_smooth_wrr"
-  }
-}
-```
+| 能力 | 真实 NPU 结果 |
+|---|---|
+| 均衡开销 | `swrr` 247.41 QPS，`p2c_smooth_wrr` 246.46 QPS，二者 0 错误 |
+| 动态降容 | `qwen15b-npu3` capacity 10->1 后稳定占比 2.37%，理论 2.44%，29,748 请求 0 错误 |
+| 故障恢复 | 停止 `yijq27-vllm-qwen15b-5` 后 `fail_stable` 占比 0.02%，全程 72,794 请求 3 错误 |
+| 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池真实长请求 1,592 请求 0 错误 |
+| smoothStep | `0.25` 稳定降容占比 2.31%，误差 0.13pp；`0.5/1.0` 收敛更快但更接近硬切换 |
 
-对照实验可以改成：
+真实热点压力 exp2 使用 direct long-prompt 负载压 NPU3，但 vLLM 指标没有形成可观测 waiting/KV 高水位，三种调度器目标占比都约 20%。因此它作为边界说明，不作为“外部压力自动避让”的优势证明。
 
-```json
-{
-  "scheduler": {
-    "mode": "swrr"
-  }
-}
-```
-
-## 指标约定
-
-backend 的 `metrics_url` 可返回 JSON 或 Prometheus text format。router 会识别以下关键词：
-
-- NPU 利用率：`npu_util`、`ai_core_util`、`aicore_util`、`device_util`
-- 队列深度：`queue_depth`、`request_queue`、`waiting_requests`、`pending_requests`
-- KV cache：`kv_cache`、`kvcache`、`cache_block`
-- 延迟：`latency`、`duration`、`ttft`、`time_to_first_token`、`decode_time`、`prefill_time`
+完整报告见 [`docs/final-report.md`](docs/final-report.md)，实验数据说明见 [`docs/experiment-results.md`](docs/experiment-results.md)。

@@ -1,128 +1,132 @@
 # Operation Runbook
 
-本文档用于在 Kunlun-02 或其他 Ascend 910B 机器上迁移、启动和复现实验。原则是：
+本文档用于迁移和复现实验。正式实验必须在 Ascend 机器真实 NPU 上运行，主结论不使用 fake backend 数据。
 
-- router 在 CANN 开发容器内运行；
-- vLLM Ascend 后端一张 NPU 一个容器；
-- 每次启动前先检查 NPU 和端口，不要停止或杀掉他人任务；
-- 实验优先使用独立端口，避免影响长期运行服务。
-
-## 1. 登录机器
+## 1. 登录与目录
 
 ```bash
 ssh kunlun-02-act
 ```
 
-当前已配置免密 SSH。VS Code Remote-SSH 也可以直接连接 `kunlun-02-act`。
-
-## 2. 检查 NPU 占用
-
-必须先执行：
-
-```bash
-docker exec yijq27-cann851 bash -lc "npu-smi info"
-```
-
-重点看底部 `Process id` 区域。示例：
-
-```text
-NPU 0: yijq27-vllm-qwen-0
-NPU 1: yijq27-vllm-qwen-1
-NPU 2: other user's process, do not touch
-NPU 3-7: available
-```
-
-如果某张卡已有非当前实验进程，不要执行 `docker stop`、`kill`、`pkill` 或其他清理命令。换一张空闲 NPU 和一组新端口即可。
-
-## 3. 检查端口占用
-
-长期服务使用：
-
-- router: `8080` / `8081`
-- vLLM smoke-test 后端: `9011` / `9012`
-
-实验服务使用：
-
-- experiment router: `8180` / `8181`
-- Qwen2.5-1.5B vLLM 后端: `9021` / `9022`
-
-检查端口：
-
-```bash
-ss -ltnp 2>/dev/null | grep -E ':(8180|8181|9021|9022)\b' || true
-```
-
-如果端口被占用，改配置文件里的端口并同步修改启动命令。
-
-## 4. 同步代码
-
-项目在本机仓库：
-
-```text
-/Users/xiantianjian/Track1_fuiglwgfnq_repos
-```
-
-远端运行目录：
+远端仓库：
 
 ```text
 /home/yijq27/workspace/Track1_fuiglwgfnq_repos
 ```
 
-从本机同步到远端：
+CANN/router 容器内仓库：
 
-```bash
-rsync -az --delete --exclude .git ./ \
-  kunlun-02-act:/home/yijq27/workspace/Track1_fuiglwgfnq_repos/
+```text
+/workspace/Track1_fuiglwgfnq_repos
 ```
 
-## 5. Router 容器
-
-router 使用这个容器：
+router 容器：
 
 ```text
 yijq27-cann851
 ```
 
-进入容器：
+正式 vLLM 后端容器：
 
-```bash
-docker exec -it yijq27-cann851 bash
+```text
+yijq27-vllm-qwen15b-3  -> NPU 3, port 9021
+yijq27-vllm-qwen15b-4  -> NPU 4, port 9022
+yijq27-vllm-qwen15b-5  -> NPU 5, port 9026
+yijq27-vllm-qwen15b-6  -> NPU 6, port 9027
+yijq27-vllm-qwen15b-7  -> NPU 7, port 9028
 ```
 
-项目路径：
+## 2. 安全规则
+
+- 先看 `npu-smi info`，确认 NPU 3-7 没有非本项目任务。
+- 不要停止未知容器，不要杀未知进程。
+- 正式故障实验只允许操作 `yijq27-vllm-qwen15b-5`。
+- 实验 router 只通过 `scripts/lib_real_npu.sh` 里的 PID 文件清理自己启动的进程。
+- 不要使用宽泛 `pkill`、`killall`、`docker rm -f $(...)`。
+
+检查 NPU：
 
 ```bash
-cd /workspace/Track1_fuiglwgfnq_repos
+docker exec yijq27-cann851 bash -lc "npu-smi info"
 ```
 
-测试和构建：
+检查实验端口：
 
 ```bash
-go test ./...
-go build -o /workspace/bin/suan-router ./cmd/router
+ss -ltnp 2>/dev/null | grep -E ':(8180|8181)\b' || true
 ```
 
-## 6. 下载实验模型
+如果 `8180/8181` 被未知进程占用，不要强杀，先换端口或确认来源。
 
-推荐实验模型：
+## 3. 同步代码
+
+本地同步到远端建议不用 `--delete`，避免误删远端实验结果：
+
+```bash
+rsync -az --exclude .git ./ \
+  kunlun-02-act:/home/yijq27/workspace/Track1_fuiglwgfnq_repos/
+```
+
+远端如需同步到容器，当前环境已经通过 `/workspace` 挂载；如果迁移机器没有挂载，需要重新创建 CANN 容器并挂载项目目录。
+
+## 4. CANN 容器
+
+创建 8 卡 CANN 容器参考：
+
+```bash
+docker run -itd \
+  --name yijq27-cann851 \
+  --privileged \
+  --net=host \
+  --ipc=host \
+  --device /dev/davinci0 \
+  --device /dev/davinci1 \
+  --device /dev/davinci2 \
+  --device /dev/davinci3 \
+  --device /dev/davinci4 \
+  --device /dev/davinci5 \
+  --device /dev/davinci6 \
+  --device /dev/davinci7 \
+  --device /dev/davinci_manager \
+  --device /dev/devmm_svm \
+  --device /dev/hisi_hdc \
+  -v /home/yijq27/workspace/Track1_fuiglwgfnq_repos:/workspace/Track1_fuiglwgfnq_repos \
+  -v /home/yijq27/workspace/bin:/workspace/bin \
+  -v /home/yijq27/workspace/logs:/workspace/logs \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:8.5.1-910b-ubuntu22.04-py3.11 \
+  /bin/bash
+```
+
+构建 router：
+
+```bash
+docker exec yijq27-cann851 bash -lc '
+  cd /workspace/Track1_fuiglwgfnq_repos &&
+  go test ./... &&
+  go build -o /workspace/bin/suan-router ./cmd/router
+'
+```
+
+## 5. 模型
+
+正式实验模型：
 
 ```text
 Qwen/Qwen2.5-1.5B-Instruct
 ```
 
-原因：
-
-- 比 0.5B 更能体现真实推理延迟和尾延迟；
-- 单卡 910B 可直接运行；
-- 下载和启动成本仍然可控。
-
-下载到：
+本机路径：
 
 ```text
 /home/yijq27/workspace/models/Qwen2.5-1.5B-Instruct
 ```
 
-命令：
+下载示例：
 
 ```bash
 docker run --rm --entrypoint bash \
@@ -135,31 +139,33 @@ docker run --rm --entrypoint bash \
     --max-workers 4'
 ```
 
-如果迁移机器可以直连 Hugging Face，可去掉 `HF_ENDPOINT`。
+## 6. vLLM-Ascend 后端
 
-## 7. 启动两个 vLLM Ascend 后端
+已有容器时先检查，不要重复创建：
 
-以下示例使用 NPU 3 和 NPU 4。迁移时把 `NPU_A/NPU_B` 和端口改成空闲资源。
+```bash
+docker ps --format '{{.Names}} {{.Status}}' | grep 'yijq27-vllm-qwen15b'
+```
+
+单卡启动模板：
 
 ```bash
 MODEL_DIR=/home/yijq27/workspace/models/Qwen2.5-1.5B-Instruct
 IMAGE=quay.io/ascend/vllm-ascend:v0.18.0rc1
-```
+NPU=3
+PORT=9021
 
-启动 NPU 3 后端：
-
-```bash
 docker run -itd \
-  --name yijq27-vllm-qwen15b-3 \
+  --name yijq27-vllm-qwen15b-${NPU} \
   --restart unless-stopped \
   --privileged \
   --net=host \
   --ipc=host \
-  --device /dev/davinci3 \
+  --device /dev/davinci${NPU} \
   --device /dev/davinci_manager \
   --device /dev/devmm_svm \
   --device /dev/hisi_hdc \
-  -e ASCEND_RT_VISIBLE_DEVICES=3 \
+  -e ASCEND_RT_VISIBLE_DEVICES=${NPU} \
   -e HF_ENDPOINT=https://hf-mirror.com \
   -v "$MODEL_DIR":"$MODEL_DIR":ro \
   -v /usr/local/dcmi:/usr/local/dcmi \
@@ -170,290 +176,129 @@ docker run -itd \
   "$IMAGE" \
   bash -lc "vllm serve $MODEL_DIR \
     --host 0.0.0.0 \
-    --port 9021 \
+    --port ${PORT} \
     --served-model-name qwen2.5-1.5b-instruct \
     --tensor-parallel-size 1 \
     --max-model-len 2048 \
     --gpu-memory-utilization 0.75"
 ```
 
-启动 NPU 4 后端：
-
-```bash
-docker run -itd \
-  --name yijq27-vllm-qwen15b-4 \
-  --restart unless-stopped \
-  --privileged \
-  --net=host \
-  --ipc=host \
-  --device /dev/davinci4 \
-  --device /dev/davinci_manager \
-  --device /dev/devmm_svm \
-  --device /dev/hisi_hdc \
-  -e ASCEND_RT_VISIBLE_DEVICES=4 \
-  -e HF_ENDPOINT=https://hf-mirror.com \
-  -v "$MODEL_DIR":"$MODEL_DIR":ro \
-  -v /usr/local/dcmi:/usr/local/dcmi \
-  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
-  -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
-  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
-  -v /etc/ascend_install.info:/etc/ascend_install.info \
-  "$IMAGE" \
-  bash -lc "vllm serve $MODEL_DIR \
-    --host 0.0.0.0 \
-    --port 9022 \
-    --served-model-name qwen2.5-1.5b-instruct \
-    --tensor-parallel-size 1 \
-    --max-model-len 2048 \
-    --gpu-memory-utilization 0.75"
-```
-
-等待健康检查：
-
-```bash
-curl http://127.0.0.1:9021/health
-curl http://127.0.0.1:9022/health
-```
-
-查看日志：
-
-```bash
-docker logs -f yijq27-vllm-qwen15b-3
-docker logs -f yijq27-vllm-qwen15b-4
-```
-
-## 8. 启动实验 Router
-
-动态负载感知版本：
-
-```bash
-docker exec -d yijq27-cann851 bash -lc '
-  cd /workspace/Track1_fuiglwgfnq_repos &&
-  exec /workspace/bin/suan-router \
-    -config config/router.qwen15b-p2c.example.json \
-    >>/workspace/logs/suan-router-qwen15b-p2c.log 2>&1
-'
-```
-
-静态基线版本：
-
-```bash
-docker exec -d yijq27-cann851 bash -lc '
-  cd /workspace/Track1_fuiglwgfnq_repos &&
-  exec /workspace/bin/suan-router \
-    -config config/router.qwen15b-static-swrr.example.json \
-    >>/workspace/logs/suan-router-qwen15b-swrr.log 2>&1
-'
-```
-
-两个版本都默认监听：
+端口映射：
 
 ```text
-data plane:  http://127.0.0.1:8180
-admin plane: http://127.0.0.1:8181
+NPU 3 -> 9021
+NPU 4 -> 9022
+NPU 5 -> 9026
+NPU 6 -> 9027
+NPU 7 -> 9028
 ```
 
-同一时间只能启动一个实验 router，因为端口相同。切换算法前先停止当前 qwen15b 实验 router：
+健康检查：
 
 ```bash
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill"
+for p in 9021 9022 9026 9027 9028; do
+  printf "%s " "$p"
+  curl -fsS http://127.0.0.1:$p/health >/dev/null && echo ok || echo fail
+done
 ```
 
-注意：不要用无条件 `pkill -x suan-router`，否则会同时停止长期运行的 `8080/8081`
-router。上面的命令只匹配 `config/router.qwen15b-*` 实验配置，不会停止 vLLM 容器，
-也不会杀 NPU 上他人任务。
-
-当前配置建议保留：
-
-```json
-"failure_cooloff_duration": "1s"
-```
-
-该参数用于代理错误或 5xx 响应后的短暂避让。在尚未达到被动熔断阈值前，router 会先把该后端从调度候选中移出约 1 秒，减少故障检测窗口内继续打到坏节点的概率。
-
-如果要验证 aggressive P2C 的 QPS 折中，可单独启动 balanced 配置：
+模型名检查：
 
 ```bash
-docker exec -d yijq27-cann851 bash -lc '
-  cd /workspace/Track1_fuiglwgfnq_repos &&
-  exec /workspace/bin/suan-router \
-    -config config/router.qwen15b-heterogeneous-balanced.json \
-    >>/workspace/logs/suan-router-qwen15b-balanced.log 2>&1
-'
+curl -fsS http://127.0.0.1:9021/v1/models
 ```
 
-该配置启用：
+## 7. 运行正式实验
 
-```json
-"balanced_p2c": true,
-"slow_backend_min_share": 0.10
-```
-
-它只给 healthy slow backend 少量受控流量；unhealthy、passive ejected、failure cooling off、drained、capacity=0 的后端仍然不会被调度。
-
-## 9. 直接测试后端
-
-```bash
-curl http://127.0.0.1:9021/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"qwen2.5-1.5b-instruct","messages":[{"role":"user","content":"Reply with pong only."}],"max_tokens":16,"temperature":0}'
-```
-
-```bash
-curl http://127.0.0.1:9022/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"qwen2.5-1.5b-instruct","messages":[{"role":"user","content":"Reply with pong only."}],"max_tokens":16,"temperature":0}'
-```
-
-## 10. 测试 Router
-
-```bash
-curl -i http://127.0.0.1:8180/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"qwen2.5-1.5b-instruct","messages":[{"role":"user","content":"Reply with pong only."}],"max_tokens":16,"temperature":0}'
-```
-
-看响应头：
-
-```text
-X-Router-Backend: qwen15b-npu3
-```
-
-或：
-
-```text
-X-Router-Backend: qwen15b-npu4
-```
-
-查看 router 状态：
-
-```bash
-curl http://127.0.0.1:8181/admin/state
-```
-
-重点观察字段：
-
-```text
-phase
-effective_weight
-healthy
-passive_ejected
-failure_cooling_off
-latency_ewma_ms
-```
-
-查看 Prometheus 指标：
-
-```bash
-curl http://127.0.0.1:8181/metrics | grep -E 'router_backend_(healthy|failure_cooling_off|effective_weight|latency_ewma_ms)'
-```
-
-## 11. 运行实验
-
-创建结果目录：
-
-```bash
-mkdir -p /home/yijq27/workspace/Track1_fuiglwgfnq_repos/bench/results
-```
-
-平衡负载实验：
+一键完整重跑：
 
 ```bash
 cd /home/yijq27/workspace/Track1_fuiglwgfnq_repos
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8180/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body '{"model":"qwen2.5-1.5b-instruct","messages":[{"role":"user","content":"Reply with pong only."}],"max_tokens":16,"temperature":0}' \
-  --duration 60 \
-  --concurrency 16 \
-  --timeout 90 \
-  --output bench/results/qwen15b-balanced-p2c.csv
+RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
+  scripts/run_real_npu_suite.sh
 ```
 
-动态降容实验：
+单独重跑：
 
 ```bash
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8180/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body '{"model":"qwen2.5-1.5b-instruct","messages":[{"role":"user","content":"Reply with pong only."}],"max_tokens":16,"temperature":0}' \
-  --duration 80 \
-  --concurrency 16 \
-  --timeout 90 \
-  --output bench/results/qwen15b-capacity-drop-p2c.csv
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_experiment1.sh
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_experiment2_real.sh
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_experiment3.sh
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_experiment4.sh
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_experiment5_noisy.sh
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_experiment6.sh
+RESULTS_DIR=bench/results/real-npu-manual scripts/run_smoothstep_experiment.sh
 ```
 
-另开一个终端注入 capacity 变化：
+实验含义：
+
+| 实验 | 脚本 | 真实资源 |
+|---|---|---|
+| exp1 | `run_experiment1.sh` | direct、5 后端 `swrr/p2c/balanced` |
+| exp2 | `run_experiment2_real.sh` | NPU3 direct 长 prompt 压力 + 5 后端测量流量 |
+| exp3 | `run_experiment3.sh` | NPU3 capacity 10->1->10 |
+| exp4 | `run_experiment4.sh` | 只 stop/start `yijq27-vllm-qwen15b-5` |
+| exp5 | `run_experiment5_noisy.sh` | default=NPU3/4，isolated=NPU5/6/7 |
+| exp6 | `run_experiment6.sh` | 综合剧本 |
+| exp7 | `run_smoothstep_experiment.sh` | smoothStep 0.1/0.25/0.5/1.0 |
+
+## 8. 结果文件
+
+最新正式结果：
+
+```text
+bench/results/real-npu-20260627021640/
+```
+
+重点文件：
+
+```text
+analysis/real_npu_summary.csv
+analysis/real_npu_summary.md
+snapshots/*.state.json
+snapshots/*.metrics.txt
+npu-smi-before.txt
+npu-smi-after.txt
+```
+
+重新生成汇总：
 
 ```bash
-python3 bench/inject_capacity.py \
-  --admin http://127.0.0.1:8181 \
-  --event 20,default,qwen15b-npu3,1 \
-  --event 50,default,qwen15b-npu3,10
+python3 bench/generate_summary.py \
+  --results-dir bench/results/real-npu-20260627021640 \
+  --output-dir bench/results/real-npu-20260627021640/analysis
 ```
 
-生成汇总：
+## 9. 停止与清理
+
+安全停止本项目实验 router：
 
 ```bash
-python3 bench/plot_results.py \
-  --input bench/results/qwen15b-capacity-drop-p2c.csv \
-  --output bench/results/qwen15b-capacity-drop-p2c.png
+docker exec yijq27-cann851 bash -lc '
+  pidfile=/tmp/suan-router-real-experiment.pid
+  if [ -f "$pidfile" ]; then
+    pid=$(cat "$pidfile")
+    if [ -n "$pid" ] && ps -p "$pid" -o args= | grep -q /workspace/bin/suan-router; then
+      kill "$pid"
+    fi
+    rm -f "$pidfile"
+  fi
+'
 ```
 
-如果没有 matplotlib，脚本会至少输出 `.summary.csv`。
-
-调度微基准不占用 NPU，只启动 fake backend 和临时 router：
-
-```bash
-BEFORE_BIN=/tmp/suan-router-before AFTER_BIN=/workspace/bin/suan-router \
-  ./scripts/run_router_microbench.sh
-```
-
-脚本只清理自己启动的 PID。如果端口已被占用，会直接退出，不会 kill 未知进程。
-
-## 12. 停止当前实验服务
-
-停止实验 router：
-
-```bash
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill"
-```
-
-停止本次创建的 vLLM 后端：
-
-```bash
-docker rm -f yijq27-vllm-qwen15b-3 yijq27-vllm-qwen15b-4
-```
-
-不要停止不认识的容器，不要杀不属于本实验的 NPU 进程。
-
-确认实验 router 已释放：
+确认端口清空：
 
 ```bash
 ss -ltnp 2>/dev/null | grep -E ':(8180|8181)\b' || true
 ```
 
-没有输出表示 8180/8181 已释放。
-
-## 13. 迁移到其他机器时需要修改的项
-
-- SSH host
-- router 容器名
-- workspace 挂载目录
-- 可用 NPU ID
-- vLLM 端口
-- router `listen` / `admin_listen` 端口
-- 模型路径
-- 镜像名和 CANN/vLLM 版本
-
-迁移后先跑：
+确认故障实验后 NPU5 已恢复：
 
 ```bash
-go test ./...
-curl http://127.0.0.1:<backend-port>/health
-curl http://127.0.0.1:<admin-port>/admin/state
+docker start yijq27-vllm-qwen15b-5 >/dev/null 2>&1 || true
+curl -fsS http://127.0.0.1:9026/health
 ```
 
-确认通过后再跑正式压测。
+## 10. 开发夹具
+
+`bench/fake_backend.py` 和 `scripts/run_router_microbench.sh` 只用于开发期确定性验证，不写入正式赛题主结论。正式报告只引用真实 NPU 3-7 的实验数据。

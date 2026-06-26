@@ -1,111 +1,63 @@
 #!/bin/bash
-# 实验1：正常均衡场景 - 三组对照实验
-# 证明动态调度的开销和性能
+# 实验1：真实 NPU 正常均衡场景。
 
-set -e
+set -euo pipefail
 
-# 配置
-RESULTS_DIR="bench/results"
-DURATION=60
-CONCURRENCY=32
-MODEL="qwen2.5-1.5b-instruct"
-REQUEST_BODY="{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with pong only.\"}],\"max_tokens\":16,\"temperature\":0}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_DIR"
 
-# 创建结果目录
-mkdir -p "$RESULTS_DIR"
+RESULTS_DIR="${RESULTS_DIR:-bench/results/real-npu-$(date +%Y%m%d%H%M%S)}"
+DURATION="${EXP1_DURATION:-60}"
+CONCURRENCY="${EXP1_CONCURRENCY:-32}"
 
-echo "=== 实验1：正常均衡场景 - 三组对照实验 ==="
+source "$SCRIPT_DIR/lib_real_npu.sh"
+require_experiment_tools
+ensure_results_dir
+trap cleanup_router_on_exit EXIT
 
-# 1. 直接访问vLLM后端（不经过router）
-echo "1. 测试 direct-to-vLLM (NPU 3)..."
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:9021/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body "$REQUEST_BODY" \
-  --duration $DURATION \
-  --concurrency $CONCURRENCY \
-  --timeout 90 \
-  --output "$RESULTS_DIR/exp1-direct-vllm.csv" &
+echo "=== exp1: real balanced baseline ==="
+echo "results: $RESULTS_DIR"
+check_real_backends
 
-DIRECT_PID=$!
+echo "[exp1] direct single-backend reference: npu3"
+run_short_load \
+  http://127.0.0.1:9021/v1/chat/completions \
+  "$DURATION" "$CONCURRENCY" \
+  "$RESULTS_DIR/exp1-real-direct-npu3.csv"
+plot_if_possible "$RESULTS_DIR/exp1-real-direct-npu3.csv" "$RESULTS_DIR/plots/exp1-real-direct-npu3.png"
 
-# 2. 测试 router + swrr
-echo "2. 测试 router + swrr..."
-# 启动swrr router
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill" 2>/dev/null || true
+echo "[exp1] router + swrr, five real backends"
+start_router config/router.qwen15b-5backends-swrr.json exp1-swrr
+snapshot_router exp1-swrr-start
+run_short_load \
+  http://127.0.0.1:${ROUTER_DATA_PORT}/v1/chat/completions \
+  "$DURATION" "$CONCURRENCY" \
+  "$RESULTS_DIR/exp1-real-swrr.csv"
+snapshot_router exp1-swrr-end
+plot_if_possible "$RESULTS_DIR/exp1-real-swrr.csv" "$RESULTS_DIR/plots/exp1-real-swrr.png"
+stop_tracked_router
 
-docker exec -d yijq27-cann851 bash -lc "
-  cd /workspace/Track1_fuiglwgfnq_repos &&
-  exec /workspace/bin/suan-router \
-    -config config/router.qwen15b-static-swrr.example.json \
-    >>/workspace/logs/suan-router-swrr.log 2>&1
-"
-sleep 3
+echo "[exp1] router + p2c_smooth_wrr, five real backends"
+start_router config/router.qwen15b-5backends-p2c.json exp1-p2c
+snapshot_router exp1-p2c-start
+run_short_load \
+  http://127.0.0.1:${ROUTER_DATA_PORT}/v1/chat/completions \
+  "$DURATION" "$CONCURRENCY" \
+  "$RESULTS_DIR/exp1-real-p2c.csv"
+snapshot_router exp1-p2c-end
+plot_if_possible "$RESULTS_DIR/exp1-real-p2c.csv" "$RESULTS_DIR/plots/exp1-real-p2c.png"
+stop_tracked_router
 
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8180/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body "$REQUEST_BODY" \
-  --duration $DURATION \
-  --concurrency $CONCURRENCY \
-  --timeout 90 \
-  --output "$RESULTS_DIR/exp1-router-swrr.csv" &
+echo "[exp1] router + balanced_p2c, five real backends"
+start_router config/router.qwen15b-5backends-balanced.json exp1-balanced
+snapshot_router exp1-balanced-start
+run_short_load \
+  http://127.0.0.1:${ROUTER_DATA_PORT}/v1/chat/completions \
+  "$DURATION" "$CONCURRENCY" \
+  "$RESULTS_DIR/exp1-real-balanced.csv"
+snapshot_router exp1-balanced-end
+plot_if_possible "$RESULTS_DIR/exp1-real-balanced.csv" "$RESULTS_DIR/plots/exp1-real-balanced.png"
+stop_tracked_router
 
-SWRR_PID=$!
-
-# 3. 测试 router + p2c_smooth_wrr
-echo "3. 测试 router + p2c_smooth_wrr..."
-# 等待上一个实验完成
-wait $DIRECT_PID
-wait $SWRR_PID
-
-# 启动p2c router
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill" 2>/dev/null || true
-
-docker exec -d yijq27-cann851 bash -lc "
-  cd /workspace/Track1_fuiglwgfnq_repos &&
-  exec /workspace/bin/suan-router \
-    -config config/router.qwen15b-p2c.example.json \
-    >>/workspace/logs/suan-router-p2c.log 2>&1
-"
-sleep 3
-
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8180/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body "$REQUEST_BODY" \
-  --duration $DURATION \
-  --concurrency $CONCURRENCY \
-  --timeout 90 \
-  --output "$RESULTS_DIR/exp1-router-p2c.csv"
-
-# 4. 生成汇总图表
-echo "4. 生成汇总图表..."
-python3 bench/plot_results.py \
-  --input "$RESULTS_DIR/exp1-direct-vllm.csv" \
-  --output "$RESULTS_DIR/plots/exp1-direct-vllm.png"
-
-python3 bench/plot_results.py \
-  --input "$RESULTS_DIR/exp1-router-swrr.csv" \
-  --output "$RESULTS_DIR/plots/exp1-router-swrr.png"
-
-python3 bench/plot_results.py \
-  --input "$RESULTS_DIR/exp1-router-p2c.csv" \
-  --output "$RESULTS_DIR/plots/exp1-router-p2c.png"
-
-# 5. 清理
-echo "5. 清理..."
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill" 2>/dev/null || true
-
-echo "=== 实验1完成 ==="
-echo "结果文件:"
-echo "  - $RESULTS_DIR/exp1-direct-vllm.csv"
-echo "  - $RESULTS_DIR/exp1-router-swrr.csv"
-echo "  - $RESULTS_DIR/exp1-router-p2c.csv"
-echo "图表:"
-echo "  - $RESULTS_DIR/plots/exp1-direct-vllm.png"
-echo "  - $RESULTS_DIR/plots/exp1-router-swrr.png"
-echo "  - $RESULTS_DIR/plots/exp1-router-p2c.png"
+echo "exp1 done"

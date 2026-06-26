@@ -1,130 +1,84 @@
 #!/bin/bash
-# 实验6：综合剧本实验
-# 把降容、热点、故障、恢复放到一个真实端到端流程里展示
+# 实验6：真实 NPU 综合剧本。包含降容、热点压力、npu5 故障、恢复。
 
-set -e
+set -euo pipefail
 
-# 配置
-RESULTS_DIR="bench/results"
-DURATION=180
-CONCURRENCY=32
-MODEL="qwen2.5-1.5b-instruct"
-REQUEST_BODY="{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with pong only.\"}],\"max_tokens\":16,\"temperature\":0}"
-LONG_REQUEST_BODY="{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a detailed essay about artificial intelligence, machine learning, and deep learning. Include examples and explanations of neural networks, transformers, and large language models. Discuss the impact of AI on society and future developments.\"}],\"max_tokens\":256,\"temperature\":0}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_DIR"
 
-# 创建结果目录
-mkdir -p "$RESULTS_DIR"
+RESULTS_DIR="${RESULTS_DIR:-bench/results/real-npu-$(date +%Y%m%d%H%M%S)}"
+DURATION="${EXP6_DURATION:-210}"
+CONCURRENCY="${EXP6_CONCURRENCY:-32}"
+PRESSURE_CONCURRENCY="${EXP6_PRESSURE_CONCURRENCY:-6}"
+BACKEND_CONTAINER="yijq27-vllm-qwen15b-5"
 
-echo "=== 实验6：综合剧本实验 ==="
-echo "时间线:"
-echo "0-30s：5个真实vLLM-Ascend后端正常服务"
-echo "30s：对npu3降容 10 → 1"
-echo "60s：向npu4注入长prompt压力，制造热点"
-echo "90s：停止npu5后端，模拟故障"
-echo "120s：恢复npu5"
-echo "150s：恢复npu3 capacity 1 → 10"
-echo "180s：结束"
+source "$SCRIPT_DIR/lib_real_npu.sh"
+require_experiment_tools
+ensure_results_dir
+trap 'docker start "$BACKEND_CONTAINER" >/dev/null 2>&1 || true; cleanup_router_on_exit' EXIT
 
-# 1. 启动p2c_smooth_wrr router
-echo "1. 启动p2c_smooth_wrr调度器..."
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill" 2>/dev/null || true
+echo "=== exp6: real comprehensive scenario ==="
+echo "results: $RESULTS_DIR"
+check_real_backends
 
-docker exec -d yijq27-cann851 bash -lc "
-  cd /workspace/Track1_fuiglwgfnq_repos &&
-  exec /workspace/bin/suan-router \
-    -config config/router.qwen15b-5backends-p2c.json \
-    >>/workspace/logs/suan-router-comprehensive.log 2>&1
-"
-sleep 3
+start_router config/router.qwen15b-5backends-p2c.json exp6-comprehensive
+snapshot_router exp6-start
 
-# 2. 开始主负载测试
-echo "2. 开始主负载测试 (${DURATION}s, 并发${CONCURRENCY})..."
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8180/v1/chat/completions \
-  --header 'Content-Type:application/json' \
-  --body "$REQUEST_BODY" \
-  --duration $DURATION \
-  --concurrency $CONCURRENCY \
-  --timeout 90 \
-  --output "$RESULTS_DIR/exp6-comprehensive.csv" &
-
+run_short_load \
+  http://127.0.0.1:${ROUTER_DATA_PORT}/v1/chat/completions \
+  "$DURATION" "$CONCURRENCY" \
+  "$RESULTS_DIR/exp6-real-comprehensive.csv" &
 MAIN_PID=$!
 
-# 3. 开始指标采集
-echo "3. 开始指标采集..."
 python3 bench/collect_metrics.py \
   --vllm-urls "http://127.0.0.1:9021/metrics,http://127.0.0.1:9022/metrics,http://127.0.0.1:9026/metrics,http://127.0.0.1:9027/metrics,http://127.0.0.1:9028/metrics" \
-  --admin-url http://127.0.0.1:8181 \
-  --output "$RESULTS_DIR/exp6-comprehensive-metrics.csv" \
+  --backend-ids "qwen15b-npu3,qwen15b-npu4,qwen15b-npu5,qwen15b-npu6,qwen15b-npu7" \
+  --admin-url http://127.0.0.1:${ROUTER_ADMIN_PORT} \
+  --output "$RESULTS_DIR/exp6-real-comprehensive-metrics.csv" \
   --interval 1.0 \
-  --duration $DURATION &
-
+  --duration "$DURATION" &
 METRICS_PID=$!
 
-# 4. 执行剧本事件
-echo "4. 执行剧本事件..."
-
-# 第30秒：降容 npu3 10 → 1
 sleep 30
-echo "  [30s] 降容 npu3: 10 → 1"
-curl -X POST http://127.0.0.1:8181/admin/capacity \
+echo "[exp6] npu3 capacity 10 -> 1"
+curl -fsS -X POST http://127.0.0.1:${ROUTER_ADMIN_PORT}/admin/capacity \
   -H 'Content-Type: application/json' \
   -d '{"pool":"default","backend":"qwen15b-npu3","capacity":1}'
+snapshot_router exp6-after-down
 
-# 第60秒：向npu4注入长prompt压力
 sleep 30
-echo "  [60s] 向npu4注入长prompt压力..."
-for i in {1..5}; do
-  curl -s http://127.0.0.1:9022/v1/chat/completions \
-    -H 'Content-Type: application/json' \
-    -d "$LONG_REQUEST_BODY" > /dev/null &
-done
+echo "[exp6] background pressure on npu4"
+run_long_load \
+  http://127.0.0.1:9022/v1/chat/completions \
+  60 "$PRESSURE_CONCURRENCY" \
+  "$RESULTS_DIR/exp6-real-npu4-pressure.csv" &
+PRESSURE_PID=$!
+snapshot_router exp6-pressure-start
 
-# 第90秒：停止npu5后端
 sleep 30
-echo "  [90s] 停止npu5后端..."
-docker stop yijq27-vllm-qwen15b-5
+echo "[exp6] docker stop ${BACKEND_CONTAINER}"
+docker stop "$BACKEND_CONTAINER"
+snapshot_router exp6-after-stop
 
-# 第120秒：恢复npu5后端
 sleep 30
-echo "  [120s] 恢复npu5后端..."
-docker start yijq27-vllm-qwen15b-5
+echo "[exp6] docker start ${BACKEND_CONTAINER}"
+docker start "$BACKEND_CONTAINER"
+snapshot_router exp6-after-start
 
-# 第150秒：恢复npu3 capacity
 sleep 30
-echo "  [150s] 恢复npu3 capacity: 1 → 10"
-curl -X POST http://127.0.0.1:8181/admin/capacity \
+echo "[exp6] npu3 capacity 1 -> 10"
+curl -fsS -X POST http://127.0.0.1:${ROUTER_ADMIN_PORT}/admin/capacity \
   -H 'Content-Type: application/json' \
   -d '{"pool":"default","backend":"qwen15b-npu3","capacity":10}'
+snapshot_router exp6-after-up
 
-# 5. 等待测试完成
-echo "5. 等待测试完成..."
-wait $MAIN_PID
-wait $METRICS_PID
+wait "$PRESSURE_PID" || true
+wait "$MAIN_PID"
+wait "$METRICS_PID" || true
 
-# 6. 生成图表
-echo "6. 生成汇总图表..."
-python3 bench/plot_results.py \
-  --input "$RESULTS_DIR/exp6-comprehensive.csv" \
-  --output "$RESULTS_DIR/plots/exp6-comprehensive.png"
+snapshot_router exp6-end
+plot_if_possible "$RESULTS_DIR/exp6-real-comprehensive.csv" "$RESULTS_DIR/plots/exp6-real-comprehensive.png"
+stop_tracked_router
 
-# 7. 收集最终状态
-echo "7. 收集最终状态..."
-curl -s http://127.0.0.1:8181/admin/state > "$RESULTS_DIR/exp6-final-state.json"
-
-# 8. 清理
-echo "8. 清理..."
-docker exec yijq27-cann851 bash -lc \
-  "ps -eo pid=,args= | awk '/\\/workspace\\/bin\\/suan-router -config config\\/router\\.qwen15b/ && !/awk/ {print \$1}' | xargs -r kill" 2>/dev/null || true
-
-# 确保npu5容器运行
-docker start yijq27-vllm-qwen15b-5 2>/dev/null || true
-
-echo "=== 实验6完成 ==="
-echo "结果文件:"
-echo "  - $RESULTS_DIR/exp6-comprehensive.csv"
-echo "  - $RESULTS_DIR/exp6-comprehensive-metrics.csv"
-echo "  - $RESULTS_DIR/exp6-final-state.json"
-echo "图表:"
-echo "  - $RESULTS_DIR/plots/exp6-comprehensive.png"
+echo "exp6 done"
