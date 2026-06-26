@@ -13,6 +13,7 @@ backends. The target deployment for Kunlun-02 is:
 - Router container: `yijq27-cann851`
 - Workspace mount: `/home/yijq27/workspace` on the host, `/workspace` in the container
 - Smoke-test model: `Qwen/Qwen2.5-0.5B-Instruct`
+- Model directory: `/home/yijq27/workspace/models/Qwen2.5-0.5B-Instruct`
 - vLLM image: `quay.io/ascend/vllm-ascend:v0.18.0rc1`
 
 The smoke-test model is intentionally small. It is used to validate the
@@ -41,7 +42,7 @@ Create one container per backend. Bind each container to a different NPU with
 `ASCEND_RT_VISIBLE_DEVICES`, and share the model cache directory read-only.
 
 ```bash
-MODEL_DIR=/storage3/yijq27/models/Qwen2.5-0.5B-Instruct
+MODEL_DIR=/home/yijq27/workspace/models/Qwen2.5-0.5B-Instruct
 IMAGE=quay.io/ascend/vllm-ascend:v0.18.0rc1
 
 docker run -itd \
