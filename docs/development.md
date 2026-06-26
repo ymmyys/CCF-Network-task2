@@ -24,8 +24,8 @@ request path before switching to a larger model.
 
 Use `config/router.vllm-ascend.example.json` for the two-backend local setup:
 
-- `vllm-ascend-0`: `http://127.0.0.1:9001`
-- `vllm-ascend-1`: `http://127.0.0.1:9002`
+- `vllm-ascend-0`: `http://127.0.0.1:9011`
+- `vllm-ascend-1`: `http://127.0.0.1:9012`
 
 Each backend exposes:
 
@@ -62,11 +62,11 @@ docker run -itd \
   -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
   -v /etc/ascend_install.info:/etc/ascend_install.info \
   "$IMAGE" \
-  bash -lc "vllm serve $MODEL_DIR --host 0.0.0.0 --port 9001 --served-model-name qwen2.5-0.5b-instruct --tensor-parallel-size 1 --max-model-len 2048 --gpu-memory-utilization 0.75"
+  bash -lc "vllm serve $MODEL_DIR --host 0.0.0.0 --port 9011 --served-model-name qwen2.5-0.5b-instruct --tensor-parallel-size 1 --max-model-len 2048 --gpu-memory-utilization 0.75"
 ```
 
 Repeat with container name `yijq27-vllm-qwen-1`, device
-`/dev/davinci1`, `ASCEND_RT_VISIBLE_DEVICES=1`, and port `9002`.
+`/dev/davinci1`, `ASCEND_RT_VISIBLE_DEVICES=1`, and port `9012`.
 
 ## Start Router In Container
 
