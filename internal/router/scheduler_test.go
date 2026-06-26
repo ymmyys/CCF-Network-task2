@@ -106,15 +106,107 @@ func TestP2CPrefersLowerInflightCandidate(t *testing.T) {
 	atomic.StoreInt64(&hot.inflight, 9)
 
 	pool := rt.pools["default"]
-	for i := 0; i < 10; i++ {
+	// 高权重 + 高负载使得 weighted sample 不以 hot 为主，但 loadScore 会偏好 cool
+	coolWins := 0
+	for i := 0; i < 40; i++ {
 		backend, err := pool.pick()
 		if err != nil {
 			t.Fatalf("pick: %v", err)
 		}
-		if backend.ID() != "cool" {
-			t.Fatalf("pick %d selected %q, want cool", i, backend.ID())
+		if backend.ID() == "cool" {
+			coolWins++
 		}
 		backend.release(time.Millisecond)
+	}
+	if coolWins <= 20 {
+		t.Fatalf("cool wins = %d, want > 20 (p2c should prefer lower inflight)", coolWins)
+	}
+}
+
+func TestP2CResamplesDuplicateHighLoadCandidate(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		Scheduler: Scheduler{
+			Mode: "p2c_smooth_wrr",
+		},
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{
+				{ID: "hot", URL: "http://127.0.0.1:9001", Capacity: 100, MaxInflight: 10},
+				{ID: "cool", URL: "http://127.0.0.1:9002", Capacity: 1, MaxInflight: 10},
+			},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	hot, ok := rt.findBackend("default", "hot")
+	if !ok {
+		t.Fatal("hot backend not found")
+	}
+	hot.mu.Lock()
+	hot.remoteUtilization = 0.95
+	hot.queueDepth = rt.cfg.Load.QueueSoftLimit
+	hot.latencyEWMA = rt.cfg.Load.LatencySLOMillis
+	hot.mu.Unlock()
+
+	pool := rt.pools["default"]
+	coolWins := 0
+	for i := 0; i < 40; i++ {
+		backend, err := pool.pick()
+		if err != nil {
+			t.Fatalf("pick: %v", err)
+		}
+		if backend.ID() == "cool" {
+			coolWins++
+		}
+		backend.release(time.Millisecond)
+	}
+	if coolWins < 35 {
+		t.Fatalf("cool wins = %d, want >= 35 (duplicate high-load samples should be challenged)", coolWins)
+	}
+}
+
+func TestBackendFailureCooloffTemporarilyUnschedulable(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		FailureCooloffDuration: Duration{
+			Duration: 500 * time.Millisecond,
+		},
+		PassiveFailureThreshold: 3,
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:       "npu-a",
+				URL:      "http://127.0.0.1:9001",
+				Capacity: 10,
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	backend.markFailure("upstream status 500")
+	if _, ok := backend.schedulingState(time.Now()); ok {
+		t.Fatal("backend is schedulable during failure cooloff")
+	}
+
+	backend.mu.Lock()
+	backend.failureCooloffUntil = time.Now().Add(-time.Millisecond)
+	backend.mu.Unlock()
+	if _, ok := backend.schedulingState(time.Now()); !ok {
+		t.Fatal("backend should be schedulable after failure cooloff expires")
 	}
 }
 

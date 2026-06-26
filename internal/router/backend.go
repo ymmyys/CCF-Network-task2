@@ -37,6 +37,7 @@ type Backend struct {
 	maxInflight             int64
 	passiveFailureThreshold int
 	passiveEjectDuration    time.Duration
+	failureCooloffDuration  time.Duration
 	slowStartDuration       time.Duration
 	proxy                   *httputil.ReverseProxy
 
@@ -58,6 +59,7 @@ type Backend struct {
 	lastHealthProbe     time.Time
 	lastMetricsProbe    time.Time
 	passiveUntil        time.Time
+	failureCooloffUntil time.Time
 	consecutiveFailures int
 }
 
@@ -72,6 +74,7 @@ type BackendState struct {
 	EffectiveWeight     float64   `json:"effective_weight"`
 	Healthy             bool      `json:"healthy"`
 	PassiveEjected      bool      `json:"passive_ejected"`
+	FailureCoolingOff   bool      `json:"failure_cooling_off"`
 	Inflight            int64     `json:"inflight"`
 	MaxInflight         int64     `json:"max_inflight"`
 	RemoteUtilization   float64   `json:"remote_utilization"`
@@ -106,6 +109,7 @@ func newBackend(cfg BackendConfig, routerCfg Config) (*Backend, error) {
 		maxInflight:             cfg.MaxInflight,
 		passiveFailureThreshold: routerCfg.PassiveFailureThreshold,
 		passiveEjectDuration:    routerCfg.PassiveEjectDuration.Duration,
+		failureCooloffDuration:  routerCfg.FailureCooloffDuration.Duration,
 		slowStartDuration:       routerCfg.SlowStartDuration.Duration,
 		capacity:                cfg.Capacity,
 		desiredWeight:           cfg.Capacity,
@@ -219,20 +223,35 @@ func (b *Backend) release(latency time.Duration) {
 func (b *Backend) schedulingState(now time.Time) (float64, bool) {
 	b.mu.RLock()
 	weight := b.effectiveWeight
-	healthy := b.healthy && now.After(b.passiveUntil)
+	healthy := b.healthy
+	passiveUntil := b.passiveUntil
+	failureCooloffUntil := b.failureCooloffUntil
 	maxInflight := b.maxInflight
 	capacity := b.capacity
 	phase := b.phase
 	b.mu.RUnlock()
 
 	inflight := atomic.LoadInt64(&b.inflight)
+
 	if maxInflight > 0 && inflight >= maxInflight {
 		return 0, false
 	}
+	// 完全不可用: capacity=0 / Drained / unhealthy 且不在 recovering
 	if capacity <= 0 || phase == PhaseDrained {
 		return 0, false
 	}
-	return weight, healthy && weight > 0
+	// 健康检查失败或被动熔断中: 不可调度
+	if !healthy || now.Before(passiveUntil) {
+		return 0, false
+	}
+	if now.Before(failureCooloffUntil) {
+		return 0, false
+	}
+	// weight <= 0: 不可调度
+	if weight <= 0 {
+		return 0, false
+	}
+	return weight, true
 }
 
 func (b *Backend) state(now time.Time) BackendState {
@@ -249,6 +268,7 @@ func (b *Backend) state(now time.Time) BackendState {
 		EffectiveWeight:     b.effectiveWeight,
 		Healthy:             b.healthy,
 		PassiveEjected:      now.Before(b.passiveUntil),
+		FailureCoolingOff:   now.Before(b.failureCooloffUntil),
 		Inflight:            atomic.LoadInt64(&b.inflight),
 		MaxInflight:         b.maxInflight,
 		RemoteUtilization:   b.remoteUtilization,
@@ -290,6 +310,7 @@ func (b *Backend) setHealth(healthy bool) {
 	b.healthy = healthy
 	if healthy {
 		b.passiveUntil = time.Time{}
+		b.failureCooloffUntil = time.Time{}
 		b.consecutiveFailures = 0
 		b.lastError = ""
 		if b.capacity > 0 && wasUnavailable {
@@ -306,6 +327,7 @@ func (b *Backend) setHealth(healthy bool) {
 func (b *Backend) markSuccess() {
 	b.mu.Lock()
 	b.consecutiveFailures = 0
+	b.failureCooloffUntil = time.Time{}
 	b.lastError = ""
 	b.mu.Unlock()
 }
@@ -315,9 +337,14 @@ func (b *Backend) markFailure(message string) {
 	now := time.Now()
 	b.consecutiveFailures++
 	b.lastError = message
+	if b.failureCooloffDuration > 0 {
+		b.failureCooloffUntil = now.Add(b.failureCooloffDuration)
+	}
+	if b.phase != PhaseDrained {
+		b.enterPhaseLocked(PhaseDraining, now)
+	}
 	if b.consecutiveFailures >= b.passiveFailureThreshold {
 		b.passiveUntil = now.Add(b.passiveEjectDuration)
-		b.enterPhaseLocked(PhaseDraining, now)
 	}
 	b.lastUpdated = now
 	b.mu.Unlock()
@@ -362,6 +389,7 @@ func (b *Backend) setProbeHealth(healthy bool, message string) {
 	if healthy {
 		b.consecutiveFailures = 0
 		b.passiveUntil = time.Time{}
+		b.failureCooloffUntil = time.Time{}
 		b.lastError = ""
 		if b.capacity > 0 && (b.phase == PhaseDrained || b.phase == PhaseDraining) {
 			b.enterPhaseLocked(PhaseRecovering, now)

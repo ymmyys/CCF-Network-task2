@@ -10,6 +10,7 @@
 - 平滑降权：有效权重按 `effective += (desired - effective) * smooth_step` 逐步靠近目标权重。比如 capacity 从 10 降到 1 时，新请求概率会逐步下降，已分配请求不会被中断。
 - 显式状态机：backend 状态包括 `active`、`draining`、`drained`、`recovering`。降容/摘除时进入 draining，恢复时通过 slow-start 从 recovering 回到 active。
 - 健康与被动熔断：健康检查失败或连续代理错误会暂时摘除 backend，后续探活恢复。
+- 上游错误短暂避让：单次代理错误或 5xx 响应会触发 `failure_cooloff_duration`，在被动熔断阈值前先短暂避开异常后端。
 - Prometheus 兼容：router 会读取 backend 的 Prometheus 指标，也会暴露自身 `/metrics`。
 
 ## 运行
@@ -32,6 +33,8 @@ Kunlun-02 上的多 vLLM Ascend 部署流程见
 [`docs/runbook.md`](docs/runbook.md)。
 本次真实昇腾 NPU 实验结果见
 [`docs/experiment-results.md`](docs/experiment-results.md)。
+本轮调度优化、微基准和多模型验证建议见
+[`docs/optimization-and-validation.md`](docs/optimization-and-validation.md)。
 
 ## 动态降容演示
 

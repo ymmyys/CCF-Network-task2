@@ -10,6 +10,8 @@ import (
 
 var ErrNoBackendAvailable = errors.New("no backend available")
 
+const p2cSameCandidateResampleThreshold = 0.35
+
 type backendSlot struct {
 	backend *Backend
 	current float64
@@ -99,12 +101,23 @@ func (p *Pool) pickP2CLocked() (*Backend, error) {
 		return p.commitPick(candidates[0].slot, total), nil
 	}
 
+	// weighted sample with replacement: 两次独立采样，可能选到同一个 backend
 	first := p.weightedCandidate(candidates, total, nil)
-	second := p.weightedCandidate(candidates, total-first.weight, first.slot)
-	if second.slot == nil {
-		second = p.bestCurrentCandidate(candidates, first.slot)
+	second := p.weightedCandidate(candidates, total, nil)
+
+	// 选到同一个 -> 直接使用
+	if first.slot == second.slot {
+		if p.sameCandidateNeedsResample(first) {
+			alternate := p.weightedCandidate(candidates, total-first.weight, first.slot)
+			if alternate.slot != nil {
+				winner := p.betterP2CCandidate(first, alternate)
+				return p.commitPick(winner.slot, total), nil
+			}
+		}
+		return p.commitPick(first.slot, total), nil
 	}
 
+	// 两个不同 backend -> 用 loadScore 选更优的
 	winner := p.betterP2CCandidate(first, second)
 	return p.commitPick(winner.slot, total), nil
 }
@@ -146,17 +159,11 @@ func (p *Pool) weightedCandidate(candidates []candidateSlot, total float64, excl
 	return candidateSlot{}
 }
 
-func (p *Pool) bestCurrentCandidate(candidates []candidateSlot, exclude *backendSlot) candidateSlot {
-	var best candidateSlot
-	for _, candidate := range candidates {
-		if candidate.slot == exclude {
-			continue
-		}
-		if best.slot == nil || candidate.slot.current > best.slot.current {
-			best = candidate
-		}
+func (p *Pool) sameCandidateNeedsResample(candidate candidateSlot) bool {
+	if candidate.slot == nil {
+		return false
 	}
-	return best
+	return candidate.slot.backend.p2cLoadScore(p.load) >= p2cSameCandidateResampleThreshold
 }
 
 func (p *Pool) betterP2CCandidate(a, b candidateSlot) candidateSlot {

@@ -150,3 +150,18 @@ These results support the following claims for the Track 2 submission:
   the transition.
 - The implementation avoids occupied NPU resources by explicitly selecting
   available NPU IDs and using separate experiment ports.
+
+## 完整实验计划
+
+为了验证动态负载感知调度器的核心能力，我们设计了完整的7组实验，详见 [full-experiment-plan.md](full-experiment-plan.md)。
+
+实验设计覆盖以下维度：
+1. **正常均衡场景**：证明动态调度无额外开销
+2. **异构负载场景**：验证慢节点避让能力，并记录吞吐和延迟折中
+3. **动态降容场景**：验证capacity平滑迁移
+4. **故障恢复场景**：证明高可用性
+5. **资源池隔离**：验证多租户隔离能力
+6. **真实NPU端到端**：证明可落地性
+7. **smoothStep参数敏感性**：验证降容迁移的收敛速度和平滑性折中
+
+完整的实验脚本和配置文件见 `scripts/` 和 `config/` 目录。

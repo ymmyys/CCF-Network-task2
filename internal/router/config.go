@@ -42,6 +42,7 @@ type Config struct {
 	SlowStartDuration       Duration     `json:"slow_start_duration"`
 	PassiveFailureThreshold int          `json:"passive_failure_threshold"`
 	PassiveEjectDuration    Duration     `json:"passive_eject_duration"`
+	FailureCooloffDuration  Duration     `json:"failure_cooloff_duration"`
 	Scheduler               Scheduler    `json:"scheduler"`
 	Load                    LoadPolicy   `json:"load"`
 	Pools                   []PoolConfig `json:"pools"`
@@ -123,6 +124,9 @@ func (cfg *Config) applyDefaults() {
 	}
 	if cfg.PassiveEjectDuration.Duration <= 0 {
 		cfg.PassiveEjectDuration.Duration = 5 * time.Second
+	}
+	if cfg.FailureCooloffDuration.Duration <= 0 {
+		cfg.FailureCooloffDuration.Duration = time.Second
 	}
 	if cfg.Scheduler.Mode == "" {
 		cfg.Scheduler.Mode = "p2c_smooth_wrr"

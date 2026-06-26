@@ -30,7 +30,7 @@
       "name": "default",
       "backends": [
         {
-          "id": "qwen15b-npu3",
+          "id": "default-npu3",
           "url": "http://127.0.0.1:9021",
           "capacity": 10,
           "max_inflight": 64,
@@ -38,12 +38,33 @@
           "metrics_url": "http://127.0.0.1:9021/metrics"
         },
         {
-          "id": "qwen15b-npu4",
+          "id": "default-npu4",
           "url": "http://127.0.0.1:9022",
           "capacity": 10,
           "max_inflight": 64,
           "health_url": "http://127.0.0.1:9022/health",
           "metrics_url": "http://127.0.0.1:9022/metrics"
+        }
+      ]
+    },
+    {
+      "name": "isolated",
+      "backends": [
+        {
+          "id": "isolated-fake-1",
+          "url": "http://127.0.0.1:9024",
+          "capacity": 6,
+          "max_inflight": 32,
+          "health_url": "http://127.0.0.1:9024/healthz",
+          "metrics_url": "http://127.0.0.1:9124/metrics"
+        },
+        {
+          "id": "isolated-fake-2",
+          "url": "http://127.0.0.1:9025",
+          "capacity": 6,
+          "max_inflight": 32,
+          "health_url": "http://127.0.0.1:9025/healthz",
+          "metrics_url": "http://127.0.0.1:9125/metrics"
         }
       ]
     }

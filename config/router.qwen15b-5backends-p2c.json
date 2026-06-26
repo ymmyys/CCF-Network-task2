@@ -44,6 +44,30 @@
           "max_inflight": 64,
           "health_url": "http://127.0.0.1:9022/health",
           "metrics_url": "http://127.0.0.1:9022/metrics"
+        },
+        {
+          "id": "qwen15b-npu5",
+          "url": "http://127.0.0.1:9026",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9026/health",
+          "metrics_url": "http://127.0.0.1:9026/metrics"
+        },
+        {
+          "id": "qwen15b-npu6",
+          "url": "http://127.0.0.1:9027",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9027/health",
+          "metrics_url": "http://127.0.0.1:9027/metrics"
+        },
+        {
+          "id": "qwen15b-npu7",
+          "url": "http://127.0.0.1:9028",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9028/health",
+          "metrics_url": "http://127.0.0.1:9028/metrics"
         }
       ]
     }

@@ -264,6 +264,14 @@ docker exec yijq27-cann851 bash -lc \
 router。上面的命令只匹配 `config/router.qwen15b-*` 实验配置，不会停止 vLLM 容器，
 也不会杀 NPU 上他人任务。
 
+当前配置建议保留：
+
+```json
+"failure_cooloff_duration": "1s"
+```
+
+该参数用于代理错误或 5xx 响应后的短暂避让。在尚未达到被动熔断阈值前，router 会先把该后端从调度候选中移出约 1 秒，减少故障检测窗口内继续打到坏节点的概率。
+
 ## 9. 直接测试后端
 
 ```bash

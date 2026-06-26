@@ -11,7 +11,7 @@
   "passive_eject_duration": "10s",
   "failure_cooloff_duration": "1s",
   "scheduler": {
-    "mode": "p2c_smooth_wrr"
+    "mode": "swrr"
   },
   "load": {
     "ewma_alpha": 0.35,
@@ -34,16 +34,35 @@
           "url": "http://127.0.0.1:9021",
           "capacity": 10,
           "max_inflight": 64,
-          "health_url": "http://127.0.0.1:9021/health",
-          "metrics_url": "http://127.0.0.1:9021/metrics"
+          "health_url": "http://127.0.0.1:9021/health"
         },
         {
           "id": "qwen15b-npu4",
           "url": "http://127.0.0.1:9022",
           "capacity": 10,
           "max_inflight": 64,
-          "health_url": "http://127.0.0.1:9022/health",
-          "metrics_url": "http://127.0.0.1:9022/metrics"
+          "health_url": "http://127.0.0.1:9022/health"
+        },
+        {
+          "id": "qwen15b-npu5",
+          "url": "http://127.0.0.1:9026",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9026/health"
+        },
+        {
+          "id": "qwen15b-npu6",
+          "url": "http://127.0.0.1:9027",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9027/health"
+        },
+        {
+          "id": "qwen15b-npu7",
+          "url": "http://127.0.0.1:9028",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9028/health"
         }
       ]
     }

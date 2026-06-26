@@ -244,6 +244,7 @@ func (rt *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {
 			fmt.Fprintf(w, "router_backend_effective_weight{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.EffectiveWeight)
 			fmt.Fprintf(w, "router_backend_inflight{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, backend.Inflight)
 			fmt.Fprintf(w, "router_backend_healthy{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.Healthy && !backend.PassiveEjected))
+			fmt.Fprintf(w, "router_backend_failure_cooling_off{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.FailureCoolingOff))
 			fmt.Fprintf(w, "router_backend_remote_utilization{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.RemoteUtilization)
 			fmt.Fprintf(w, "router_backend_queue_depth{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.QueueDepth)
 			fmt.Fprintf(w, "router_backend_kv_cache_usage{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.KVCacheUsage)

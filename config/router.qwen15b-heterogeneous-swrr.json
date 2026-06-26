@@ -11,7 +11,7 @@
   "passive_eject_duration": "10s",
   "failure_cooloff_duration": "1s",
   "scheduler": {
-    "mode": "p2c_smooth_wrr"
+    "mode": "swrr"
   },
   "load": {
     "ewma_alpha": 0.35,
@@ -30,20 +30,18 @@
       "name": "default",
       "backends": [
         {
-          "id": "qwen15b-npu3",
+          "id": "fast-backend",
           "url": "http://127.0.0.1:9021",
           "capacity": 10,
           "max_inflight": 64,
-          "health_url": "http://127.0.0.1:9021/health",
-          "metrics_url": "http://127.0.0.1:9021/metrics"
+          "health_url": "http://127.0.0.1:9021/health"
         },
         {
-          "id": "qwen15b-npu4",
-          "url": "http://127.0.0.1:9022",
+          "id": "slow-backend",
+          "url": "http://127.0.0.1:9023",
           "capacity": 10,
           "max_inflight": 64,
-          "health_url": "http://127.0.0.1:9022/health",
-          "metrics_url": "http://127.0.0.1:9022/metrics"
+          "health_url": "http://127.0.0.1:9023/healthz"
         }
       ]
     }
