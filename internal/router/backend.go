@@ -485,6 +485,9 @@ func parsePrometheusMetrics(text string, policy LoadPolicy) metricsSample {
 			continue
 		}
 		name := metricName(fields[0])
+		if isPrometheusCreatedMetric(name) {
+			continue
+		}
 		value, err := strconv.ParseFloat(fields[len(fields)-1], 64)
 		if err != nil {
 			continue
@@ -511,6 +514,10 @@ func metricName(token string) string {
 	return strings.ToLower(token)
 }
 
+func isPrometheusCreatedMetric(name string) bool {
+	return strings.HasSuffix(name, "_created")
+}
+
 func looksLikeUtilizationMetric(name string) bool {
 	if strings.Contains(name, "memory") || strings.Contains(name, "hbm") {
 		return false
@@ -527,8 +534,13 @@ func looksLikeUtilizationMetric(name string) bool {
 }
 
 func looksLikeQueueMetric(name string) bool {
+	if isPrometheusHistogramPart(name) || strings.Contains(name, "queue_time") {
+		return false
+	}
 	return strings.Contains(name, "queue_depth") ||
 		strings.Contains(name, "request_queue") ||
+		strings.Contains(name, "requests_waiting") ||
+		strings.Contains(name, "num_requests_waiting") ||
 		strings.Contains(name, "waiting_requests") ||
 		strings.Contains(name, "pending_requests")
 }
@@ -540,9 +552,7 @@ func looksLikeKVCacheMetric(name string) bool {
 }
 
 func looksLikeLatencyMetric(name string) bool {
-	if strings.HasSuffix(name, "_bucket") ||
-		strings.HasSuffix(name, "_count") ||
-		strings.HasSuffix(name, "_sum") {
+	if isPrometheusHistogramPart(name) {
 		return false
 	}
 	return strings.Contains(name, "latency") ||
@@ -551,6 +561,13 @@ func looksLikeLatencyMetric(name string) bool {
 		strings.Contains(name, "time_to_first_token") ||
 		strings.Contains(name, "decode_time") ||
 		strings.Contains(name, "prefill_time")
+}
+
+func isPrometheusHistogramPart(name string) bool {
+	return strings.HasSuffix(name, "_bucket") ||
+		strings.HasSuffix(name, "_count") ||
+		strings.HasSuffix(name, "_sum") ||
+		strings.HasSuffix(name, "_created")
 }
 
 func normalizeRatio(value float64) float64 {

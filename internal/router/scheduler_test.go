@@ -205,6 +205,27 @@ decode_latency_ms 1200
 	}
 }
 
+func TestMetricsSampleIgnoresPrometheusCreatedTimestamps(t *testing.T) {
+	sample := parseMetricsSample([]byte(`
+vllm:num_requests_waiting{engine="0",model_name="qwen2.5-0.5b-instruct"} 0.0
+vllm:kv_cache_usage_perc{engine="0",model_name="qwen2.5-0.5b-instruct"} 0.25
+vllm:request_queue_time_seconds_count{engine="0",model_name="qwen2.5-0.5b-instruct"} 1.0
+vllm:request_queue_time_seconds_sum{engine="0",model_name="qwen2.5-0.5b-instruct"} 14.0
+vllm:request_queue_time_seconds_created{engine="0",model_name="qwen2.5-0.5b-instruct"} 1.7824789093587415e+09
+vllm:time_to_first_token_seconds_created{engine="0",model_name="qwen2.5-0.5b-instruct"} 1.7824789093587415e+09
+`), LoadPolicy{})
+
+	if sample.queueDepth != 0 {
+		t.Fatalf("queue depth = %v, want 0", sample.queueDepth)
+	}
+	if sample.kvCache != 0.25 {
+		t.Fatalf("kv cache = %v, want 0.25", sample.kvCache)
+	}
+	if sample.latencyMS != 0 {
+		t.Fatalf("latency = %v, want 0", sample.latencyMS)
+	}
+}
+
 func TestResourcePoolIsolation(t *testing.T) {
 	cfg := Config{
 		DefaultPool: "default",
