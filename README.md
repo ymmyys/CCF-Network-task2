@@ -20,6 +20,10 @@ go run ./cmd/router -config config/router.example.json
 
 数据面默认监听 `:8080`，管理面默认监听 `:8081`。
 
+Kunlun-02 上的多 vLLM Ascend 部署流程见
+[`docs/development.md`](docs/development.md)，对应配置样例为
+[`config/router.vllm-ascend.example.json`](config/router.vllm-ascend.example.json)。
+
 ## 动态降容演示
 
 把 `ascend-910b-a` 的 capacity 从 10 调到 1：
