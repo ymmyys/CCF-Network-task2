@@ -1,0 +1,48 @@
+{
+  "listen": ":8180",
+  "admin_listen": ":8181",
+  "default_pool": "default",
+  "pool_header": "X-Resource-Pool",
+  "update_interval": "1s",
+  "probe_timeout": "2s",
+  "smooth_step": 0.25,
+  "slow_start_duration": "15s",
+  "passive_failure_threshold": 3,
+  "passive_eject_duration": "10s",
+  "scheduler": {
+    "mode": "swrr"
+  },
+  "load": {
+    "ewma_alpha": 0.35,
+    "utilization_weight": 0.35,
+    "queue_weight": 0.25,
+    "inflight_weight": 0.2,
+    "kv_cache_weight": 0.1,
+    "latency_weight": 0.1,
+    "queue_soft_limit": 16,
+    "kv_cache_soft_limit": 1,
+    "latency_slo_ms": 2500,
+    "min_healthy_fraction": 0.03
+  },
+  "pools": [
+    {
+      "name": "default",
+      "backends": [
+        {
+          "id": "qwen15b-npu3",
+          "url": "http://127.0.0.1:9021",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9021/health"
+        },
+        {
+          "id": "qwen15b-npu4",
+          "url": "http://127.0.0.1:9022",
+          "capacity": 10,
+          "max_inflight": 64,
+          "health_url": "http://127.0.0.1:9022/health"
+        }
+      ]
+    }
+  ]
+}

@@ -24,6 +24,15 @@ Kunlun-02 上的多 vLLM Ascend 部署流程见
 [`docs/development.md`](docs/development.md)，对应配置样例为
 [`config/router.vllm-ascend.example.json`](config/router.vllm-ascend.example.json)。
 
+赛题 2 的实验验证方案见
+[`docs/experiments.md`](docs/experiments.md)。实验配置包含
+`config/router.qwen15b-p2c.example.json` 和
+`config/router.qwen15b-static-swrr.example.json`，用于对比动态负载感知调度与静态平滑加权轮询。
+可迁移的启动、验证、实验与停止操作手册见
+[`docs/runbook.md`](docs/runbook.md)。
+本次真实昇腾 NPU 实验结果见
+[`docs/experiment-results.md`](docs/experiment-results.md)。
+
 ## 动态降容演示
 
 把 `ascend-910b-a` 的 capacity 从 10 调到 1：

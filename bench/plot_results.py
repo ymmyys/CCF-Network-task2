@@ -25,21 +25,30 @@ def summarize(rows):
     start = min(float(row["ts"]) for row in rows)
     buckets = defaultdict(list)
     backend_counts = defaultdict(Counter)
+    status_counts = defaultdict(Counter)
     for row in rows:
         bucket = int(float(row["ts"]) - start)
         latency = float(row["latency_ms"])
         buckets[bucket].append(latency)
         backend_counts[bucket][row.get("backend", "")] += 1
+        status_counts[bucket][row.get("status", "")] += 1
 
     summary = []
     for bucket in sorted(buckets):
         values = buckets[bucket]
+        success = sum(
+            count
+            for status, count in status_counts[bucket].items()
+            if status.isdigit() and 200 <= int(status) < 300
+        )
         summary.append(
             {
                 "second": bucket,
                 "qps": len(values),
+                "success_rate": success / len(values) if values else 0,
                 "p50_ms": percentile(values, 0.50),
                 "p95_ms": percentile(values, 0.95),
+                "p99_ms": percentile(values, 0.99),
                 "backends": json_like_counts(backend_counts[bucket]),
             }
         )
@@ -52,7 +61,10 @@ def json_like_counts(counter):
 
 def write_summary(path, summary):
     with open(path, "w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=["second", "qps", "p50_ms", "p95_ms", "backends"])
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["second", "qps", "success_rate", "p50_ms", "p95_ms", "p99_ms", "backends"],
+        )
         writer.writeheader()
         writer.writerows(summary)
 
@@ -67,6 +79,7 @@ def plot(summary, output):
     qps = [row["qps"] for row in summary]
     p50 = [row["p50_ms"] for row in summary]
     p95 = [row["p95_ms"] for row in summary]
+    p99 = [row["p99_ms"] for row in summary]
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
     axes[0].plot(seconds, qps, label="QPS")
@@ -76,6 +89,7 @@ def plot(summary, output):
 
     axes[1].plot(seconds, p50, label="p50")
     axes[1].plot(seconds, p95, label="p95")
+    axes[1].plot(seconds, p99, label="p99")
     axes[1].set_xlabel("second")
     axes[1].set_ylabel("latency ms")
     axes[1].grid(True, alpha=0.3)
