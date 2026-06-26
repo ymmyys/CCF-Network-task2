@@ -272,6 +272,26 @@ router。上面的命令只匹配 `config/router.qwen15b-*` 实验配置，不�
 
 该参数用于代理错误或 5xx 响应后的短暂避让。在尚未达到被动熔断阈值前，router 会先把该后端从调度候选中移出约 1 秒，减少故障检测窗口内继续打到坏节点的概率。
 
+如果要验证 aggressive P2C 的 QPS 折中，可单独启动 balanced 配置：
+
+```bash
+docker exec -d yijq27-cann851 bash -lc '
+  cd /workspace/Track1_fuiglwgfnq_repos &&
+  exec /workspace/bin/suan-router \
+    -config config/router.qwen15b-heterogeneous-balanced.json \
+    >>/workspace/logs/suan-router-qwen15b-balanced.log 2>&1
+'
+```
+
+该配置启用：
+
+```json
+"balanced_p2c": true,
+"slow_backend_min_share": 0.10
+```
+
+它只给 healthy slow backend 少量受控流量；unhealthy、passive ejected、failure cooling off、drained、capacity=0 的后端仍然不会被调度。
+
 ## 9. 直接测试后端
 
 ```bash
@@ -310,6 +330,23 @@ X-Router-Backend: qwen15b-npu4
 
 ```bash
 curl http://127.0.0.1:8181/admin/state
+```
+
+重点观察字段：
+
+```text
+phase
+effective_weight
+healthy
+passive_ejected
+failure_cooling_off
+latency_ewma_ms
+```
+
+查看 Prometheus 指标：
+
+```bash
+curl http://127.0.0.1:8181/metrics | grep -E 'router_backend_(healthy|failure_cooling_off|effective_weight|latency_ewma_ms)'
 ```
 
 ## 11. 运行实验
@@ -366,6 +403,15 @@ python3 bench/plot_results.py \
 
 如果没有 matplotlib，脚本会至少输出 `.summary.csv`。
 
+调度微基准不占用 NPU，只启动 fake backend 和临时 router：
+
+```bash
+BEFORE_BIN=/tmp/suan-router-before AFTER_BIN=/workspace/bin/suan-router \
+  ./scripts/run_router_microbench.sh
+```
+
+脚本只清理自己启动的 PID。如果端口已被占用，会直接退出，不会 kill 未知进程。
+
 ## 12. 停止当前实验服务
 
 停止实验 router：
@@ -382,6 +428,14 @@ docker rm -f yijq27-vllm-qwen15b-3 yijq27-vllm-qwen15b-4
 ```
 
 不要停止不认识的容器，不要杀不属于本实验的 NPU 进程。
+
+确认实验 router 已释放：
+
+```bash
+ss -ltnp 2>/dev/null | grep -E ':(8180|8181)\b' || true
+```
+
+没有输出表示 8180/8181 已释放。
 
 ## 13. 迁移到其他机器时需要修改的项
 

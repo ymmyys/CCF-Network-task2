@@ -49,7 +49,9 @@ type Config struct {
 }
 
 type Scheduler struct {
-	Mode string `json:"mode"`
+	Mode                string  `json:"mode"`
+	BalancedP2C         bool    `json:"balanced_p2c"`
+	SlowBackendMinShare float64 `json:"slow_backend_min_share"`
 }
 
 type LoadPolicy struct {
@@ -130,6 +132,12 @@ func (cfg *Config) applyDefaults() {
 	}
 	if cfg.Scheduler.Mode == "" {
 		cfg.Scheduler.Mode = "p2c_smooth_wrr"
+	}
+	if cfg.Scheduler.SlowBackendMinShare < 0 {
+		cfg.Scheduler.SlowBackendMinShare = 0
+	}
+	if cfg.Scheduler.SlowBackendMinShare > 0.5 {
+		cfg.Scheduler.SlowBackendMinShare = 0.5
 	}
 	if cfg.Load.EWMAAlpha <= 0 || cfg.Load.EWMAAlpha > 1 {
 		cfg.Load.EWMAAlpha = 0.35

@@ -247,8 +247,8 @@ func (b *Backend) schedulingState(now time.Time) (float64, bool) {
 	if now.Before(failureCooloffUntil) {
 		return 0, false
 	}
-	// weight <= 0: 不可调度
-	if weight <= 0 {
+	// weight <= 0 or non-finite: not schedulable
+	if !isFinite(weight) || weight <= 0 {
 		return 0, false
 	}
 	return weight, true
@@ -520,6 +520,9 @@ func parsePrometheusMetrics(text string, policy LoadPolicy) metricsSample {
 		if err != nil {
 			continue
 		}
+		if !isFinite(value) {
+			continue
+		}
 
 		switch {
 		case looksLikeKVCacheMetric(name):
@@ -599,6 +602,9 @@ func isPrometheusHistogramPart(name string) bool {
 }
 
 func normalizeRatio(value float64) float64 {
+	if !isFinite(value) {
+		return 0
+	}
 	if value > 1 {
 		value = value / 100
 	}
@@ -606,6 +612,9 @@ func normalizeRatio(value float64) float64 {
 }
 
 func normalizeKVCacheMetric(name string, value, softLimit float64) float64 {
+	if !isFinite(value) {
+		return 0
+	}
 	if strings.Contains(name, "ratio") ||
 		strings.Contains(name, "rate") ||
 		strings.Contains(name, "percent") ||
@@ -619,6 +628,9 @@ func normalizeKVCacheMetric(name string, value, softLimit float64) float64 {
 }
 
 func normalizeLatencyMillis(name string, value float64) float64 {
+	if !isFinite(value) {
+		return 0
+	}
 	if strings.Contains(name, "seconds") || strings.HasSuffix(name, "_s") {
 		return value * 1000
 	}
@@ -661,9 +673,15 @@ func (b *Backend) recomputeWeight(policy LoadPolicy, smoothStep float64) {
 		}
 	}
 
+	if !isFinite(desired) {
+		desired = 0
+	}
+	if !isFinite(smoothStep) || smoothStep <= 0 || smoothStep > 1 {
+		smoothStep = 0.25
+	}
 	b.desiredWeight = desired
 	b.effectiveWeight += (desired - b.effectiveWeight) * smoothStep
-	if b.effectiveWeight < weightEpsilon {
+	if !isFinite(b.effectiveWeight) || b.effectiveWeight < weightEpsilon {
 		b.effectiveWeight = 0
 	}
 	if !eligible && b.effectiveWeight == 0 && inflight == 0 {
@@ -683,8 +701,8 @@ func (b *Backend) desiredWeightLocked(policy LoadPolicy, eligible bool, inflight
 	if b.maxInflight > 0 {
 		inflightRatio = clamp(float64(inflight)/float64(b.maxInflight), 0, 1)
 	}
-	queueRatio := clamp(b.queueDepth/policy.QueueSoftLimit, 0, 1)
-	latencyRatio := clamp(b.latencyEWMA/policy.LatencySLOMillis, 0, 1)
+	queueRatio := safeRatio(b.queueDepth, policy.QueueSoftLimit)
+	latencyRatio := safeRatio(b.latencyEWMA, policy.LatencySLOMillis)
 	loadScore := weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, latencyRatio)
 	headroom := 1 - clamp(loadScore, 0, 1)
 	if headroom < policy.MinHealthyFraction {
@@ -704,8 +722,8 @@ func (b *Backend) p2cLoadScore(policy LoadPolicy) float64 {
 	if b.maxInflight > 0 {
 		inflightRatio = clamp(float64(atomic.LoadInt64(&b.inflight))/float64(b.maxInflight), 0, 1)
 	}
-	queueRatio := clamp(b.queueDepth/policy.QueueSoftLimit, 0, 1)
-	latencyRatio := clamp(b.latencyEWMA/policy.LatencySLOMillis, 0, 1)
+	queueRatio := safeRatio(b.queueDepth, policy.QueueSoftLimit)
+	latencyRatio := safeRatio(b.latencyEWMA, policy.LatencySLOMillis)
 	return weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, latencyRatio)
 }
 
@@ -758,11 +776,15 @@ func weightedLoadScore(policy LoadPolicy, utilRatio, queueRatio, inflightRatio, 
 	if total <= 0 {
 		return 0
 	}
-	return (policy.UtilizationWeight*utilRatio +
-		policy.QueueWeight*queueRatio +
-		policy.InflightWeight*inflightRatio +
-		policy.KVCacheWeight*kvCacheRatio +
-		policy.LatencyWeight*latencyRatio) / total
+	score := (policy.UtilizationWeight*clampFinite(utilRatio, 0, 1) +
+		policy.QueueWeight*clampFinite(queueRatio, 0, 1) +
+		policy.InflightWeight*clampFinite(inflightRatio, 0, 1) +
+		policy.KVCacheWeight*clampFinite(kvCacheRatio, 0, 1) +
+		policy.LatencyWeight*clampFinite(latencyRatio, 0, 1)) / total
+	if !isFinite(score) {
+		return 0
+	}
+	return score
 }
 
 func clamp(value, low, high float64) float64 {
@@ -773,4 +795,22 @@ func clamp(value, low, high float64) float64 {
 		return high
 	}
 	return value
+}
+
+func safeRatio(value, limit float64) float64 {
+	if !isFinite(value) || !isFinite(limit) || limit <= 0 {
+		return 0
+	}
+	return clamp(value/limit, 0, 1)
+}
+
+func clampFinite(value, low, high float64) float64 {
+	if !isFinite(value) {
+		return 0
+	}
+	return clamp(value, low, high)
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }

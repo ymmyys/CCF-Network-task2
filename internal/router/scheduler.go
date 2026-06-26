@@ -174,6 +174,9 @@ func (p *Pool) betterP2CCandidate(a, b candidateSlot) candidateSlot {
 	aLoad := a.slot.backend.p2cLoadScore(p.load)
 	bLoad := b.slot.backend.p2cLoadScore(p.load)
 	if math.Abs(aLoad-bLoad) > 0.05 {
+		if p.scheduler.BalancedP2C {
+			return p.balancedLoadChoice(a, b, aLoad, bLoad)
+		}
 		if aLoad < bLoad {
 			return a
 		}
@@ -189,6 +192,34 @@ func (p *Pool) betterP2CCandidate(a, b candidateSlot) candidateSlot {
 		return a
 	}
 	return b
+}
+
+func (p *Pool) balancedLoadChoice(a, b candidateSlot, aLoad, bLoad float64) candidateSlot {
+	low := a
+	high := b
+	if bLoad < aLoad {
+		low = b
+		high = a
+	}
+	if p.shouldKeepSlowCandidate(high, low) {
+		return high
+	}
+	return low
+}
+
+func (p *Pool) shouldKeepSlowCandidate(slow, fast candidateSlot) bool {
+	floor := p.scheduler.SlowBackendMinShare
+	if floor <= 0 || slow.slot == nil || fast.slot == nil {
+		return false
+	}
+	if slow.slot.current <= fast.slot.current {
+		return false
+	}
+	keepProbability := floor / 0.75
+	if keepProbability > 0.5 {
+		keepProbability = 0.5
+	}
+	return p.rng.Float64() < keepProbability
 }
 
 func (p *Pool) commitPick(slot *backendSlot, total float64) *Backend {

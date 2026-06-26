@@ -358,7 +358,7 @@ sec 299: npu5 = 50/251 (19.9%)  ← 稳定
 | 项目 | 状态 | 说明 |
 |------|------|------|
 | exp6 综合剧本 | ❌ 未重跑 | 统计窗口需拆分为 pre/transition_down/stable_down/transition_up/stable_up |
-| exp2 QPS 下降 | ⚠️ 已知限制 | 本实验中 P2C 将 slow-fake 流量降为 0% 后只剩 1 个 fast 后端，QPS 下降是预期行为。优化方向：p2c_balanced 策略给 slow 后端少量受控流量 |
+| exp2 QPS 下降 | ⚠️ 已知限制 | 本实验中 P2C 将 slow-fake 流量降为 0% 后只剩 1 个 fast 后端，QPS 下降是预期行为。当前已新增可选 balanced P2C，但真实 exp2-balanced 尚未重跑 |
 | exp2 TTFT/TPOT | ❌ 未采集 | vLLM 的 `collect_metrics.py` 已就绪但未与 exp2 同步运行 |
 | exp7 原 2 后端数据 | ❌ 废弃 | 因 P2C 退化导致数据不可信，已改用 5 后端重做 |
 
@@ -377,7 +377,13 @@ sec 299: npu5 = 50/251 (19.9%)  ← 稳定
 
 - **P2C 同后端高负载重采样**：两次带放回采样命中同一高负载后端时，额外补抽一个候选并按 loadScore 比较，减少高权重热点节点被重复确认的概率。
 - **上游错误短暂避让**：新增 `failure_cooloff_duration`，默认 1s。代理错误或 5xx 响应后，后端即使尚未达到被动熔断阈值，也会短暂不可调度，降低故障窗口内继续打坏节点的概率。
+- **balanced P2C**：新增可选 `scheduler.balanced_p2c` 和 `scheduler.slow_backend_min_share`，用于给 healthy slow backend 少量受控流量，缓解 aggressive P2C 可能带来的 QPS/p50 代价。该能力已有单测，尚未完成真实 exp2-balanced 复验。
+- **非法指标值防护**：Prometheus 中的 `NaN`/`Inf` 会被忽略，权重计算和调度候选过滤也会拒绝非有限值，避免异常指标污染调度状态。
 
 微基准使用 fake backend 验证：hot 后端 capacity=100 但延迟 300ms、队列和利用率高；cool 后端 capacity=1 且延迟 50ms。优化前 p99 约 306.71ms，hot 命中 638/667；优化后 p99 约 54.66ms，cool 命中 3,630/3,630。该结果证明调度逻辑优化有效，但不替代真实 NPU 实验。
 
+真实 NPU 3-7 回归验证：当前版本在 5 个真实 vLLM-Ascend 后端上重跑 80s 动态降容短测，20s 时 npu3 capacity 10→1，50s 恢复 1→10。全程 10,339 请求 0 错误；降容稳定期 npu3 占比 2.20%，接近理论目标 2.44%；恢复稳定期回到 19.28%，接近均衡 20%。说明本轮优化没有破坏动态降容和平滑迁移能力。
+
 多模型验证建议：当前 Qwen2.5-1.5B-Instruct 已能支撑主证据链；决赛前建议增加小模型 smoke test 和一个更大模型/TP 模型的轻量 exp1+exp3 复验，用来证明调度能力不依赖单一模型。详细计划见 `docs/optimization-and-validation.md`。
+
+仍未实现：token-cost-aware inflight、基于恢复期错误率/高延迟的 slow-start 回退、exp6 分窗口重算。上述内容不得写入已验证结论。

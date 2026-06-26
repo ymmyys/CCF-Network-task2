@@ -1,6 +1,8 @@
 package router
 
 import (
+	"math"
+	"math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -170,6 +172,58 @@ func TestP2CResamplesDuplicateHighLoadCandidate(t *testing.T) {
 	}
 }
 
+func TestBalancedP2CKeepsControlledSlowShare(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		Scheduler: Scheduler{
+			Mode:                "p2c_smooth_wrr",
+			BalancedP2C:         true,
+			SlowBackendMinShare: 0.10,
+		},
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{
+				{ID: "slow", URL: "http://127.0.0.1:9001", Capacity: 1, MaxInflight: 100},
+				{ID: "fast", URL: "http://127.0.0.1:9002", Capacity: 1, MaxInflight: 100},
+			},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	slow, ok := rt.findBackend("default", "slow")
+	if !ok {
+		t.Fatal("slow backend not found")
+	}
+	slow.mu.Lock()
+	slow.remoteUtilization = 0.95
+	slow.queueDepth = rt.cfg.Load.QueueSoftLimit
+	slow.latencyEWMA = rt.cfg.Load.LatencySLOMillis
+	slow.mu.Unlock()
+
+	pool := rt.pools["default"]
+	pool.rng = rand.New(rand.NewSource(11))
+	counts := map[string]int{}
+	for i := 0; i < 500; i++ {
+		backend, err := pool.pick()
+		if err != nil {
+			t.Fatalf("pick: %v", err)
+		}
+		counts[backend.ID()]++
+		backend.release(time.Millisecond)
+	}
+
+	if counts["slow"] < 20 || counts["slow"] > 90 {
+		t.Fatalf("slow picks = %d, want controlled low share in [20,90]", counts["slow"])
+	}
+	if counts["fast"] <= counts["slow"] {
+		t.Fatalf("fast picks = %d, slow picks = %d, want fast dominant", counts["fast"], counts["slow"])
+	}
+}
+
 func TestBackendFailureCooloffTemporarilyUnschedulable(t *testing.T) {
 	cfg := Config{
 		DefaultPool: "default",
@@ -315,6 +369,60 @@ vllm:time_to_first_token_seconds_created{engine="0",model_name="qwen2.5-0.5b-ins
 	}
 	if sample.latencyMS != 0 {
 		t.Fatalf("latency = %v, want 0", sample.latencyMS)
+	}
+}
+
+func TestMetricsSampleIgnoresNonFiniteValues(t *testing.T) {
+	sample := parseMetricsSample([]byte(`
+npu_utilization_rate NaN
+request_queue_depth +Inf
+kv_cache_usage_ratio -Inf
+decode_latency_ms NaN
+`), LoadPolicy{KVCacheSoftLimit: 1})
+
+	if sample.utilization != 0 {
+		t.Fatalf("utilization = %v, want 0", sample.utilization)
+	}
+	if sample.queueDepth != 0 {
+		t.Fatalf("queue depth = %v, want 0", sample.queueDepth)
+	}
+	if sample.kvCache != 0 {
+		t.Fatalf("kv cache = %v, want 0", sample.kvCache)
+	}
+	if sample.latencyMS != 0 {
+		t.Fatalf("latency = %v, want 0", sample.latencyMS)
+	}
+}
+
+func TestSchedulingStateRejectsNonFiniteWeight(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:       "npu-a",
+				URL:      "http://127.0.0.1:9001",
+				Capacity: 1,
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	backend.mu.Lock()
+	backend.effectiveWeight = math.NaN()
+	backend.mu.Unlock()
+
+	if _, ok := backend.schedulingState(time.Now()); ok {
+		t.Fatal("backend with non-finite weight should not be schedulable")
 	}
 }
 

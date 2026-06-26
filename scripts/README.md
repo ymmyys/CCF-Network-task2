@@ -15,6 +15,7 @@
 |------|------|----------|----------|
 | 1. 正常均衡 | 手动运行 | router.qwen15b-p2c.example.json | exp1-balanced-*.csv |
 | 2. 异构负载 | run_experiment2.sh | router.qwen15b-heterogeneous-*.json | exp2-heterogeneous-*.csv |
+| 2b. 异构负载 balanced | 手动/扩展脚本 | router.qwen15b-heterogeneous-balanced.json | exp2-balanced-*.csv |
 | 3. 动态降容 | run_experiment3.sh | router.qwen15b-p2c.example.json | exp3-capacity-drop-p2c.csv |
 | 4. 故障恢复 | run_experiment4.sh | router.qwen15b-p2c.example.json | exp4-failure-recovery-p2c.csv |
 | 5. 资源池隔离 | 手动运行 | router.qwen15b-multi-pool.json | exp5-pool-*.csv |
