@@ -66,9 +66,10 @@ bench/results/formal/exp4-failure-recovery/
 bench/results/formal/exp5-pool-isolation/
 bench/results/formal/exp6-comprehensive/
 bench/results/formal/exp7-smoothstep/
+bench/results/formal/exp8-qwen7b-hotspot/
 ```
 
-其中 exp2 目录只保留指标修复后的正式热点压力重跑数据。
+其中 exp2 目录只保留指标修复后的正式热点压力重跑数据；exp8 是 Qwen2.5-7B-Instruct 泛化验证，不替代 exp1-exp7 主套件。
 
 统一汇总：
 
@@ -86,7 +87,8 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 
 安全边界：
 
-- 只使用 `yijq27-vllm-qwen15b-3` 到 `yijq27-vllm-qwen15b-7`。
+- exp1-exp7 只使用 `yijq27-vllm-qwen15b-3` 到 `yijq27-vllm-qwen15b-7`。
+- exp8 只临时使用 `yijq27-vllm-qwen7b-3` 到 `yijq27-vllm-qwen7b-7`，完成后删除释放 NPU。
 - 只有故障实验会停止/启动 `yijq27-vllm-qwen15b-5`。
 - router 只通过 PID 文件清理自己启动的进程，不使用宽泛 `pkill`。
 
@@ -100,7 +102,10 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | 故障恢复 | 停止 `yijq27-vllm-qwen15b-5` 后 `fail_stable` 占比 0.02%，全程 72,794 请求 3 错误 |
 | 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池真实长请求 1,592 请求 0 错误 |
 | smoothStep | `0.25` 稳定降容占比 2.31%，误差 0.13pp；`0.5/1.0` 收敛更快但更接近硬切换 |
+| 7B 泛化热点避让 | Qwen2.5-7B 真实热点压力下，SWRR 给 NPU3 19.81% 流量；`p2c_smooth_wrr` 降到 0.00%；`balanced_p2c` 保留 3.64% 探测流量；三组均 0 错误 |
 
 exp2 的基线是 `config/router.qwen15b-5backends-swrr.json`：它不配置 `metrics_url`，只按静态 capacity 做平滑加权轮询。改进组 `p2c_smooth_wrr` 与 `balanced_p2c` 配置 vLLM `/metrics`，将 `vllm:num_requests_running` 归一化为 `remote_utilization`，并把 `vllm:num_requests_waiting`、GPU/KV cache 指标纳入负载评分。这样可以直接验证赛题要求的“根据节点实时负载动态调整被选中概率”。
+
+exp8 使用同样的热点避让方法，但把模型换成 `Qwen/Qwen2.5-7B-Instruct`，端口为 `9121/9122/9126/9127/9128`。该实验用于回应“单模型验证”的风险：在更大模型上，动态组仍能利用真实 vLLM 指标避开热点 NPU3，并保持 0 错误。
 
 完整报告见 [`docs/final-report.md`](docs/final-report.md)，实验数据说明见 [`docs/experiment-results.md`](docs/experiment-results.md)。

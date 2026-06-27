@@ -26,6 +26,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | exp5 资源池隔离 | `run_experiment5_noisy.sh` | `exp5-real-default.csv`, `exp5-real-isolated.csv` |
 | exp6 综合剧本 | `run_experiment6.sh` | `exp6-real-comprehensive.csv` |
 | exp7 smoothStep | `run_smoothstep_experiment.sh` | `exp7-real-ss*.csv` |
+| exp8 7B 泛化热点压力 | `run_experiment8_qwen7b_real.sh` | `exp8-qwen7b-hotspot-*.csv`, `exp8-qwen7b-hotspot-*-metrics.csv` |
 
 所有正式脚本都会加载 `scripts/lib_real_npu.sh`：
 
@@ -45,6 +46,18 @@ yijq27-vllm-qwen15b-5 -> 9026
 yijq27-vllm-qwen15b-6 -> 9027
 yijq27-vllm-qwen15b-7 -> 9028
 ```
+
+exp8 会临时使用 Qwen2.5-7B 后端：
+
+```text
+yijq27-vllm-qwen7b-3 -> 9121
+yijq27-vllm-qwen7b-4 -> 9122
+yijq27-vllm-qwen7b-5 -> 9126
+yijq27-vllm-qwen7b-6 -> 9127
+yijq27-vllm-qwen7b-7 -> 9128
+```
+
+实验完成后应删除这些 `qwen7b` 容器释放 NPU。
 
 检查：
 
@@ -84,6 +97,8 @@ router_kv_cache_usage
 ```
 
 SWRR 配置故意不配置 `metrics_url`，作为静态基线；P2C 和 balanced P2C 配置 vLLM `/metrics`，用于验证实时负载感知。
+
+exp8 使用 `config/router.qwen7b-5backends-*.json`，验证同一热点避让逻辑在 Qwen2.5-7B-Instruct 上是否仍成立。
 
 ## 开发夹具
 

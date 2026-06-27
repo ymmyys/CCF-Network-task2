@@ -58,6 +58,7 @@ bench/results/formal/analysis/real_npu_summary.csv
 | 故障恢复 | NPU5 故障稳定期占比 0.02%，恢复末段占比 19.80%，72,794 请求 3 错误 |
 | 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池 1,592 长请求 0 错误 |
 | smoothStep | 0.25 稳定降容占比 2.31%，误差 0.13pp |
+| 7B 泛化热点避让 | Qwen2.5-7B 下 SWRR 给 NPU3 19.81%；`p2c_smooth_wrr` 降到 0.00%；`balanced_p2c` 降到 3.64%；均 0 错误 |
 
 ## exp2 指标驱动热点验证
 
@@ -76,6 +77,24 @@ bench/results/formal/exp2-hotspot-load/
 | balanced_p2c | 3.94% | 149.97ms | 157.72ms | 35 | 1.0 |
 
 结论：在 NPU3 真实外部压力被 vLLM `/metrics` 观测到后，动态调度会主动降低热点节点被选中概率。`p2c_smooth_wrr` 追求尾延迟和热点规避，把 NPU3 测量流量降到 0；`balanced_p2c` 保留少量探测流量，便于热点消退后恢复判断。
+
+## exp8 7B 泛化验证
+
+exp8 将后端模型换为 `Qwen/Qwen2.5-7B-Instruct`，仍对 NPU3 发送 direct 长 prompt 压力，并通过 router 测量 5 后端分布。该实验使用临时容器 `yijq27-vllm-qwen7b-3` 到 `yijq27-vllm-qwen7b-7`，实验结束后移除容器释放 NPU。
+
+结果目录：
+
+```text
+bench/results/formal/exp8-qwen7b-hotspot/
+```
+
+| 调度器 | NPU3 占比 | QPS | p95 | p99 | router max remote_utilization |
+|---|---:|---:|---:|---:|---:|
+| swrr 基线 | 19.81% | 77.51 | 136.74ms | 279.10ms | 0.0 |
+| p2c_smooth_wrr | 0.00% | 92.51 | 187.76ms | 222.68ms | 1.0 |
+| balanced_p2c | 3.64% | 95.13 | 182.55ms | 214.18ms | 1.0 |
+
+结论：7B 模型下，动态调度仍能根据真实 vLLM 指标把热点 NPU3 从正常 20% 份额降到 0% 或受控探测份额。该实验补充跨模型泛化证据；由于 p95 未优于 SWRR，不夸大为全面延迟优势。
 
 ## 开发夹具
 
@@ -97,4 +116,4 @@ fake backend 对确定性复现很有价值，例如构造 300ms 延迟、固定
 | NPU exporter 集成 | 可选增强 | 当前已使用 vLLM engine 指标完成热点感知；硬件 exporter 可补充设备级压力 |
 | token-cost-aware inflight | TODO | 根据 prompt/max_tokens 估计请求成本 |
 | 恢复期回退 | TODO | recovering 阶段若出现高延迟/错误，降低回流速度 |
-| 多模型矩阵 | TODO | 用小模型和更大模型补充泛化证据 |
+| 多模型矩阵 | 部分完成 | 已补 Qwen2.5-7B 热点避让；后续可扩展更长上下文和更多模型 |

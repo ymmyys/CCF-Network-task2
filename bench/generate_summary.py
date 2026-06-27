@@ -231,6 +231,25 @@ def collect_summaries(results_dir):
         row.update(metrics_signal_stats(results_dir, f"exp2-real-hotspot-{metric_tag}-metrics.csv", "qwen15b-npu3"))
         summaries.append(row)
 
+    for scheduler, filename in [
+        ("swrr", "exp8-qwen7b-hotspot-swrr.csv"),
+        ("p2c_smooth_wrr", "exp8-qwen7b-hotspot-p2c.csv"),
+        ("balanced_p2c", "exp8-qwen7b-hotspot-balanced.csv"),
+    ]:
+        row = make_row(
+            results_dir, "exp8", scheduler, filename,
+            "Qwen2.5-7B 真实热点压力",
+            "背景压力是直接打到 Qwen2.5-7B NPU3 的长 prompt 请求",
+            target_backend="qwen7b-npu3",
+        )
+        metric_tag = scheduler
+        if scheduler == "p2c_smooth_wrr":
+            metric_tag = "p2c"
+        if scheduler == "balanced_p2c":
+            metric_tag = "balanced"
+        row.update(metrics_signal_stats(results_dir, f"exp8-qwen7b-hotspot-{metric_tag}-metrics.csv", "qwen7b-npu3"))
+        summaries.append(row)
+
     exp3_windows = [
         ("pre_0_30", 0, 30, None),
         ("transition_down_30_40", 30, 40, 2.44),

@@ -12,6 +12,8 @@
 | 容器工作区 | `/workspace/Track1_fuiglwgfnq_repos` |
 | 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
 | 模型目录 | `/home/yijq27/workspace/models/Qwen2.5-1.5B-Instruct` |
+| 7B 泛化模型 | `Qwen/Qwen2.5-7B-Instruct` |
+| 7B 模型目录 | `/home/yijq27/workspace/models/Qwen2.5-7B-Instruct` |
 | vLLM 镜像 | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
 | Router 数据/管理端口 | `8180` / `8181` |
 
@@ -24,6 +26,18 @@
 | `qwen15b-npu5` | 5 | 9026 | `yijq27-vllm-qwen15b-5` |
 | `qwen15b-npu6` | 6 | 9027 | `yijq27-vllm-qwen15b-6` |
 | `qwen15b-npu7` | 7 | 9028 | `yijq27-vllm-qwen15b-7` |
+
+exp8 泛化实验会临时使用 7B 后端：
+
+| 后端 ID | NPU | 端口 | 容器 |
+|---|---:|---:|---|
+| `qwen7b-npu3` | 3 | 9121 | `yijq27-vllm-qwen7b-3` |
+| `qwen7b-npu4` | 4 | 9122 | `yijq27-vllm-qwen7b-4` |
+| `qwen7b-npu5` | 5 | 9126 | `yijq27-vllm-qwen7b-5` |
+| `qwen7b-npu6` | 6 | 9127 | `yijq27-vllm-qwen7b-6` |
+| `qwen7b-npu7` | 7 | 9128 | `yijq27-vllm-qwen7b-7` |
+
+7B 容器只在 exp8 期间启动，结束后删除释放 NPU。
 
 每个后端暴露：
 
@@ -103,10 +117,19 @@ EXP2_PRESSURE_CONCURRENCY=32 \
   scripts/run_experiment2_real.sh
 ```
 
+单独运行 exp8 7B 泛化热点实验：
+
+```bash
+RESULTS_DIR=bench/results/real-npu-qwen7b-$(date +%Y%m%d%H%M%S) \
+  scripts/run_experiment8_qwen7b_real.sh
+```
+
 ## 运维注意事项
 
 - router 和 vLLM 进程都应运行在 Kunlun-02 的容器内。
 - 不要停止无关容器或进程。
 - 故障实验只允许 stop/start `yijq27-vllm-qwen15b-5`。
+- exp8 只允许创建/删除 `yijq27-vllm-qwen7b-3` 到 `yijq27-vllm-qwen7b-7`。
 - `config/router.qwen15b-5backends-swrr.json` 是静态基线，故意不配置 `metrics_url`。
 - `config/router.qwen15b-5backends-p2c.json` 和 `config/router.qwen15b-5backends-balanced.json` 会读取 vLLM `/metrics` 实现负载感知调度。
+- `config/router.qwen7b-5backends-*.json` 是 exp8 使用的 7B 配置。

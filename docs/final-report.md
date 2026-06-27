@@ -88,9 +88,11 @@ active -> draining -> drained -> recovering -> active
 | 硬件 | Ascend 910B，正式实验使用 NPU 3-7 |
 | Router 容器 | `yijq27-cann851` |
 | vLLM 镜像 | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
-| 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
-| 正式结果目录 | `bench/results/formal/`，按 exp1-exp7 分目录 |
+| 主套件模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
+| 泛化实验模型 | `Qwen/Qwen2.5-7B-Instruct` |
+| 正式结果目录 | `bench/results/formal/`，按 exp1-exp8 分目录 |
 | 指标驱动 exp2 数据 | `bench/results/formal/exp2-hotspot-load/` |
+| 7B 泛化 exp8 数据 | `bench/results/formal/exp8-qwen7b-hotspot/` |
 | 汇总文件 | `bench/results/formal/analysis/real_npu_summary.csv` |
 
 正式主结论只引用真实 NPU 数据。fake backend 只作为开发夹具，不进入本报告主证据链。
@@ -119,6 +121,18 @@ active -> draining -> drained -> recovering -> active
 | balanced_p2c | 14,429 | 0 | 240.42 | 149.97ms | 157.72ms | 3.94% | 35 | 1.0 |
 
 结论：静态 SWRR 不感知 NPU3 上的外部压力，仍按 5 后端均匀分配约 20% 测量流量。`p2c_smooth_wrr` 读到 NPU3 的真实 running 指标后，将 NPU3 测量流量降到 0%，并把流量迁移到 NPU4-7；`balanced_p2c` 在同样感知热点的同时保留 3.94% 受控探测流量。三组均 0 错误，且改进组 p95/p99 均优于基线。该实验直接补上实时负载感知证据。
+
+### exp8：Qwen2.5-7B 泛化热点避让
+
+设置：将后端模型切换为 `Qwen/Qwen2.5-7B-Instruct`，仍使用 NPU3-7，端口为 `9121/9122/9126/9127/9128`。对 NPU3 直接发送长 prompt 背景压力，同时经 router 发送测量流量。该实验用于验证 exp2 的热点避让逻辑在更大模型上仍可工作。
+
+| 调度器 | 请求 | 错误 | QPS | p50 | p95 | p99 | NPU3 占比 | router max remote_utilization |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| swrr 基线 | 8,532 | 0 | 77.51 | 102.46ms | 136.74ms | 279.10ms | 19.81% | 0.0 |
+| p2c_smooth_wrr | 11,100 | 0 | 92.51 | 130.15ms | 187.76ms | 222.68ms | 0.00% | 1.0 |
+| balanced_p2c | 11,415 | 0 | 95.13 | 125.94ms | 182.55ms | 214.18ms | 3.64% | 1.0 |
+
+结论：在 7B 模型上，静态 SWRR 仍给热点 NPU3 分配约 20% 流量；`p2c_smooth_wrr` 将 NPU3 测量流量降到 0%，`balanced_p2c` 保留 3.64% 探测流量。三组均 0 错误。动态组在吞吐和 p99 上优于基线，p95 高于 SWRR，因此该实验作为跨模型泛化补充证据，主定量证据仍以 exp2 的指标驱动热点避让为准。
 
 ### exp3：动态 capacity 10->1->10
 
@@ -181,17 +195,18 @@ active -> draining -> drained -> recovering -> active
 
 1. 动态调度开销低：均衡场景中 `p2c_smooth_wrr` 与 `swrr` QPS/p99 基本持平。
 2. 实时负载感知有效：NPU3 外部真实压力下，`p2c_smooth_wrr` 将 NPU3 测量流量从基线 19.96% 降到 0.00%，`balanced_p2c` 降到 3.94%。
-3. capacity 动态变化可平滑迁移：10->1 后稳定占比 2.37%，接近理论 2.44%，0 错误。
-4. 故障恢复可落地：真实停止 NPU5 容器后稳定期占比 0.02%，恢复末段回到 19.80%。
-5. 多资源池隔离有效：default 池在 isolated 真实长请求高压下 28,218 请求 0 错误。
-6. smoothStep 参数有实测依据：0.25 是当前 5 后端拓扑下的默认折中。
+3. 跨模型泛化已有补充证据：Qwen2.5-7B 热点压力下，动态组仍能把 NPU3 流量从 19.81% 降到 0.00% 或 3.64%。
+4. capacity 动态变化可平滑迁移：10->1 后稳定占比 2.37%，接近理论 2.44%，0 错误。
+5. 故障恢复可落地：真实停止 NPU5 容器后稳定期占比 0.02%，恢复末段回到 19.80%。
+6. 多资源池隔离有效：default 池在 isolated 真实长请求高压下 28,218 请求 0 错误。
+7. smoothStep 参数有实测依据：0.25 是当前 5 后端拓扑下的默认折中。
 
 ## 7. 不能夸大的内容
 
 - exp2 证明的是 vLLM `/metrics` 可观测到的 engine running 压力下，router 能动态避让；它不等价于已经接入所有硬件级 NPU 利用率来源。
 - fake backend 微基准不进入正式主结论。
 - exp6 是演示型综合剧本，不替代 exp3/exp4/exp5 的分窗口结果。
-- 当前模型集中在 Qwen2.5-1.5B-Instruct，跨模型泛化仍需补充。
+- 主套件集中在 Qwen2.5-1.5B-Instruct；已补充 Qwen2.5-7B-Instruct 的热点避让泛化实验，但更多模型和更长上下文仍可继续扩展。
 
 ## 8. 代码与脚本更新
 
@@ -199,6 +214,7 @@ active -> draining -> drained -> recovering -> active
 - 新增 `scripts/run_real_npu_suite.sh`，完整重跑真实 NPU 实验。
 - 新增 `config/router.qwen15b-5backends-balanced.json`。
 - 新增 `config/router.qwen15b-multi-pool-real.json`。
+- 新增 `config/router.qwen7b-5backends-*.json` 和 `scripts/run_experiment8_qwen7b_real.sh`，用于 7B 泛化热点避让。
 - `internal/router/backend.go` 增强 vLLM Prometheus 解析：`num_requests_running`、`num_requests_waiting`、`gpu_cache_usage_perc` 会进入 load score。
 - `bench/generate_summary.py` 改为真实实验窗口汇总，排除 fake backend 文件。
 - `bench/collect_metrics.py` 输出 vLLM running/waiting/cache 与 router `/admin/state` 中的 remote utilization、queue depth、KV cache 快照。

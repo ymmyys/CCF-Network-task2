@@ -13,6 +13,7 @@
 | `formal/exp5-pool-isolation/` | exp5 | 多资源池 noisy-neighbor 隔离 |
 | `formal/exp6-comprehensive/` | exp6 | 综合演示剧本 |
 | `formal/exp7-smoothstep/` | exp7 | smoothStep 参数敏感性 |
+| `formal/exp8-qwen7b-hotspot/` | exp8 | Qwen2.5-7B 热点避让泛化 |
 | `formal/system/` | system | `npu-smi` 前后快照 |
 | `formal/analysis/` | summary | 自动生成的综合汇总 |
 
@@ -24,6 +25,7 @@
 - `exp*-real-*.csv`：`bench/loadgen.py` 生成的原始 OpenAI-compatible 请求日志。
 - `exp*-real-*.summary.csv`：按秒统计的延迟、QPS 和后端占比。
 - `exp2-real-hotspot-*-metrics.csv`：正式热点实验中的 vLLM `/metrics` 与 router `/admin/state` 采样。
+- `exp8-qwen7b-hotspot-*-metrics.csv`：Qwen2.5-7B 泛化热点实验中的 vLLM `/metrics` 与 router `/admin/state` 采样。
 - `*.state.json` 和 `*.metrics.txt`：实验过程中采集的 router 状态和 Prometheus 快照。
 - `npu-smi-before.txt` 和 `npu-smi-after.txt`：完整实验前后的设备状态快照。
 

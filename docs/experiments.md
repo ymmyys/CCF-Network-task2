@@ -11,7 +11,8 @@
 - capacity 10->1->10 时，新请求平滑迁移，已分配请求不中断；
 - 后端故障时自动摘除，恢复后 slow-start；
 - 多资源池并发时隔离有效；
-- smoothStep 参数选择有真实数据支撑。
+- smoothStep 参数选择有真实数据支撑；
+- 更大模型 Qwen2.5-7B-Instruct 下，热点避让结论仍成立。
 
 ## 测试环境
 
@@ -20,6 +21,7 @@
 | 主机 | `kunlun-02-act` |
 | Router 容器 | `yijq27-cann851` |
 | 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
+| 泛化模型 | `Qwen/Qwen2.5-7B-Instruct` |
 | 真实后端 | NPU 3/4/5/6/7 |
 | Router 端口 | `8180` / `8181` |
 
@@ -40,6 +42,7 @@ bench/results/formal/
 | exp5 | `scripts/run_experiment5_noisy.sh` | 资源池隔离 | default 池在 isolated 高压下 0 错误 |
 | exp6 | `scripts/run_experiment6.sh` | 综合剧本 | 作为演示，不替代分窗口核心实验 |
 | exp7 | `scripts/run_smoothstep_experiment.sh` | smoothStep 参数 | 比较 0.1/0.25/0.5/1.0 的收敛和平滑性 |
+| exp8 | `scripts/run_experiment8_qwen7b_real.sh` | 7B 模型泛化热点避让 | 在 Qwen2.5-7B 上验证 P2C 仍能按真实 vLLM 指标避开热点 NPU3 |
 
 ## 指标
 
@@ -59,6 +62,13 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
   scripts/run_real_npu_suite.sh
 ```
 
+7B 泛化实验单独运行，避免长期占用 NPU：
+
+```bash
+RESULTS_DIR=bench/results/real-npu-qwen7b-$(date +%Y%m%d%H%M%S) \
+  scripts/run_experiment8_qwen7b_real.sh
+```
+
 生成汇总：
 
 ```bash
@@ -75,3 +85,4 @@ python3 bench/generate_summary.py \
 - exp4：NPU5 故障稳定期占比 0.02%，恢复末段占比 19.80%，72,794 请求 3 错误。
 - exp5：default 池 28,218 请求 0 错误，isolated 池 1,592 请求 0 错误。
 - exp7：smoothStep=0.25 稳定降容占比 2.31%，误差 0.13pp。
+- exp8：Qwen2.5-7B 热点压力下，SWRR 给 NPU3 19.81%；`p2c_smooth_wrr` 降到 0.00%；`balanced_p2c` 保留 3.64%；三组均 0 错误。

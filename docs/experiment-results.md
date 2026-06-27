@@ -10,9 +10,10 @@ bench/results/formal/exp4-failure-recovery/
 bench/results/formal/exp5-pool-isolation/
 bench/results/formal/exp6-comprehensive/
 bench/results/formal/exp7-smoothstep/
+bench/results/formal/exp8-qwen7b-hotspot/
 ```
 
-exp1、exp3、exp4、exp5、exp6、exp7 来自完整真实 NPU suite；exp2 来自指标修复后的热点压力重跑。
+exp1、exp3、exp4、exp5、exp6、exp7 来自完整真实 NPU suite；exp2 来自指标修复后的热点压力重跑；exp8 是 Qwen2.5-7B-Instruct 的热点避让泛化验证。
 
 正式结果全部来自真实 Ascend NPU 3-7。
 
@@ -23,7 +24,8 @@ exp1、exp3、exp4、exp5、exp6、exp7 来自完整真实 NPU suite；exp2 来�
 | 主机 | `kunlun-02-act` |
 | Router 容器 | `yijq27-cann851` |
 | 后端容器 | `yijq27-vllm-qwen15b-3` 到 `yijq27-vllm-qwen15b-7` |
-| 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
+| 主套件模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
+| 泛化实验模型 | `Qwen/Qwen2.5-7B-Instruct` |
 | vLLM 镜像 | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
 | Router 端口 | `8180` / `8181` |
 
@@ -38,11 +40,12 @@ exp1、exp3、exp4、exp5、exp6、exp7 来自完整真实 NPU suite；exp2 来�
 | exp5 | default 池 28,218 请求 0 错误；isolated 池真实 NPU 长请求 1,592 请求 0 错误 |
 | exp6 | 综合剧本 50,003 请求 7 错误，作为演示型结果 |
 | exp7 | smoothStep=0.25 稳定降容占比 2.31%，误差 0.13pp |
+| exp8 | Qwen2.5-7B 热点压力下，SWRR NPU3 占比 19.81%；`p2c_smooth_wrr` 降到 0.00%；`balanced_p2c` 保留 3.64%；三组均 0 错误 |
 
 ## 正式证据边界
 
 - 进入正式主结论：exp1、exp2 指标驱动重跑、exp3、exp4、exp5、exp7。
-- 辅助演示：exp6 为综合演示。
+- 辅助/补充证据：exp6 为综合演示；exp8 为 7B 模型泛化验证。
 - 不进入主结论：fake backend 微基准和旧异构开发夹具。
 
 ## 生成文件
@@ -53,6 +56,7 @@ exp1、exp3、exp4、exp5、exp6、exp7 来自完整真实 NPU suite；exp2 来�
 analysis/real_npu_summary.csv
 analysis/real_npu_summary.md
 exp2-real-hotspot-*-metrics.csv
+exp8-qwen7b-hotspot/
 exp*/README.md
 exp*/*.state.json
 exp*/*.metrics.txt
