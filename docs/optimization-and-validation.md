@@ -53,22 +53,29 @@ bench/results/real-npu-20260627021640/analysis/real_npu_summary.csv
 | 能力 | 结果 |
 |---|---|
 | 均衡开销 | `swrr` 247.41 QPS；`p2c_smooth_wrr` 246.46 QPS；均 0 错误 |
+| 真实热点避让 | SWRR baseline 给 NPU3 19.96%；`p2c_smooth_wrr` 在 `remote_utilization=1.0` 时降到 0.00%；`balanced_p2c` 降到 3.94% |
 | 动态降容 | NPU3 stable down 2.37%，理论 2.44%，29,748 请求 0 错误 |
 | 故障恢复 | NPU5 fail stable 0.02%，recovery end 19.80%，72,794 请求 3 错误 |
 | 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池 1,592 长请求 0 错误 |
 | smoothStep | 0.25 stable down 2.31%，误差 0.13pp |
 
-## Exp2 Boundary
+## Exp2 Metrics-Driven Hotspot Validation
 
-真实 exp2 对 NPU3 发 direct long-prompt 压力，并通过 router 测量 5 后端分布。强压力重跑后：
+真实 exp2 对 NPU3 发 direct long-prompt 压力，并通过 router 测量 5 后端分布。SWRR baseline 不配置 `metrics_url`，只按静态 capacity 轮询；P2C 组配置 vLLM `/metrics`，router 解析 `vllm:num_requests_running`、`vllm:num_requests_waiting`、`vllm:gpu_cache_usage_perc`。
 
-| 调度器 | NPU3 占比 | p95 | p99 |
-|---|---:|---:|---:|
-| swrr | 19.93% | 157.86ms | 170.54ms |
-| p2c_smooth_wrr | 19.91% | 155.94ms | 173.51ms |
-| balanced_p2c | 19.93% | 157.19ms | 171.16ms |
+重跑结果目录：
 
-结论：该外部压力没有通过当前 vLLM Prometheus 指标形成明显 waiting/KV 高水位，因此 router 不应强行迁移流量。这个结果是边界说明，不作为优势证明。下一步若要强化外部热点感知，应接入更直接的 NPU 利用率 exporter 或 vLLM engine queue 信号。
+```text
+bench/results/real-npu-metrics-exp2-20260627203104/
+```
+
+| 调度器 | NPU3 占比 | p95 | p99 | NPU3 max running | router max remote_utilization |
+|---|---:|---:|---:|---:|---:|
+| swrr baseline | 19.96% | 154.65ms | 178.44ms | 38 | 0.0 |
+| p2c_smooth_wrr | 0.00% | 148.74ms | 158.73ms | 32 | 1.0 |
+| balanced_p2c | 3.94% | 149.97ms | 157.72ms | 35 | 1.0 |
+
+结论：在 NPU3 真实 external pressure 被 vLLM `/metrics` 观测到后，动态调度会主动降低热点节点被选中概率。`p2c_smooth_wrr` 追求尾延迟和热点规避，把 NPU3 测量流量降到 0；`balanced_p2c` 保留少量探测流量，便于热点消退后恢复判断。
 
 ## Development Fixtures
 
@@ -87,7 +94,7 @@ fake backend 对确定性复现很有价值，例如构造 300ms 延迟、固定
 
 | 项目 | 状态 | 说明 |
 |---|---|---|
-| NPU exporter 集成 | TODO | 用真实硬件利用率增强外部热点感知 |
+| NPU exporter 集成 | 可选增强 | 当前已使用 vLLM engine 指标完成热点感知；硬件 exporter 可补充设备级压力 |
 | token-cost-aware inflight | TODO | 根据 prompt/max_tokens 估计请求成本 |
 | 恢复期回退 | TODO | recovering 阶段若出现高延迟/错误，降低回流速度 |
 | 多模型矩阵 | TODO | 用小模型和更大模型补充泛化证据 |

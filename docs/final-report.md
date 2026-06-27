@@ -89,7 +89,8 @@ active -> draining -> drained -> recovering -> active
 | Router 容器 | `yijq27-cann851` |
 | vLLM 镜像 | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
 | 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
-| 结果目录 | `bench/results/real-npu-20260627021640/` |
+| 完整结果目录 | `bench/results/real-npu-20260627021640/` |
+| 指标驱动 exp2 重跑目录 | `bench/results/real-npu-metrics-exp2-20260627203104/` |
 | 汇总文件 | `analysis/real_npu_summary.csv` |
 
 正式主结论只引用真实 NPU 数据。fake backend 只作为开发夹具，不进入本报告主证据链。
@@ -107,17 +108,17 @@ active -> draining -> drained -> recovering -> active
 
 结论：在 5 个真实后端均衡健康时，`p2c_smooth_wrr` 相比 `swrr` QPS 下降约 0.38%，p99 基本持平，说明动态调度开销很低。direct 是单后端参考，不与 5 后端 router 做横向吞吐比较。
 
-### exp2：真实外部热点压力边界
+### exp2：真实指标驱动热点避让
 
-设置：对 NPU3 直接发送长 prompt 背景压力，同时经 router 发送测量流量。
+设置：对 NPU3 直接发送长 prompt 背景压力，同时经 router 发送测量流量。SWRR 组使用静态配置，不读取 vLLM `/metrics`，作为 baseline；`p2c_smooth_wrr` 和 `balanced_p2c` 组配置后端 `/metrics`，router 将 `vllm:num_requests_running` 按 `queue_soft_limit=16` 归一化为 `remote_utilization`，并采集 waiting、GPU/KV cache 指标。
 
-| 调度器 | 请求 | 错误 | QPS | p95 | p99 | NPU3 占比 |
-|---|---:|---:|---:|---:|---:|---:|
-| swrr | 21,713 | 0 | 241.16 | 157.86ms | 170.54ms | 19.93% |
-| p2c_smooth_wrr | 21,669 | 0 | 240.76 | 155.94ms | 173.51ms | 19.91% |
-| balanced_p2c | 21,607 | 0 | 240.01 | 157.19ms | 171.16ms | 19.93% |
+| 调度器 | 请求 | 错误 | QPS | p95 | p99 | NPU3 占比 | NPU3 max running | router max remote_utilization |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| swrr baseline | 14,179 | 0 | 236.45 | 154.65ms | 178.44ms | 19.96% | 38 | 0.0 |
+| p2c_smooth_wrr | 14,447 | 0 | 240.81 | 148.74ms | 158.73ms | 0.00% | 32 | 1.0 |
+| balanced_p2c | 14,429 | 0 | 240.42 | 149.97ms | 157.72ms | 3.94% | 35 | 1.0 |
 
-结论边界：该真实外部压力没有让 vLLM 指标形成明显 waiting/KV 高水位，因此三种调度器都保持约 20% 分布。这个结果不能证明“外部直连压力自动避让”，但证明在该压力下 router 没有误判或引入错误。后续若要强化热点感知，需要接入更直接的 NPU exporter 或 vLLM engine queue 信号。
+结论：静态 SWRR 不感知 NPU3 上的外部压力，仍按 5 后端均匀分配约 20% 测量流量。`p2c_smooth_wrr` 读到 NPU3 的真实 running 指标后，将 NPU3 测量流量降到 0%，并把流量迁移到 NPU4-7；`balanced_p2c` 在同样感知热点的同时保留 3.94% 受控探测流量。三组均 0 错误，且改进组 p95/p99 均优于 baseline。该实验直接补上实时负载感知证据。
 
 ### exp3：动态 capacity 10->1->10
 
@@ -179,14 +180,15 @@ active -> draining -> drained -> recovering -> active
 ## 6. 可支撑结论
 
 1. 动态调度开销低：均衡场景中 `p2c_smooth_wrr` 与 `swrr` QPS/p99 基本持平。
-2. capacity 动态变化可平滑迁移：10->1 后稳定占比 2.37%，接近理论 2.44%，0 错误。
-3. 故障恢复可落地：真实停止 NPU5 容器后稳定期占比 0.02%，恢复末段回到 19.80%。
-4. 多资源池隔离有效：default 池在 isolated 真实长请求高压下 28,218 请求 0 错误。
-5. smoothStep 参数有实测依据：0.25 是当前 5 后端拓扑下的默认折中。
+2. 实时负载感知有效：NPU3 外部真实压力下，`p2c_smooth_wrr` 将 NPU3 测量流量从 baseline 19.96% 降到 0.00%，`balanced_p2c` 降到 3.94%。
+3. capacity 动态变化可平滑迁移：10->1 后稳定占比 2.37%，接近理论 2.44%，0 错误。
+4. 故障恢复可落地：真实停止 NPU5 容器后稳定期占比 0.02%，恢复末段回到 19.80%。
+5. 多资源池隔离有效：default 池在 isolated 真实长请求高压下 28,218 请求 0 错误。
+6. smoothStep 参数有实测依据：0.25 是当前 5 后端拓扑下的默认折中。
 
 ## 7. 不能夸大的内容
 
-- exp2 没有证明外部直连压力自动避让；它证明的是当前 vLLM 指标下该压力未被 router 观测为热点。
+- exp2 证明的是 vLLM `/metrics` 可观测到的 engine running 压力下，router 能动态避让；它不等价于已经接入所有硬件级 NPU 利用率来源。
 - fake backend 微基准不进入正式主结论。
 - exp6 是演示型综合剧本，不替代 exp3/exp4/exp5 的分窗口结果。
 - 当前模型集中在 Qwen2.5-1.5B-Instruct，跨模型泛化仍需补充。
@@ -197,8 +199,9 @@ active -> draining -> drained -> recovering -> active
 - 新增 `scripts/run_real_npu_suite.sh`，完整重跑真实 NPU 实验。
 - 新增 `config/router.qwen15b-5backends-balanced.json`。
 - 新增 `config/router.qwen15b-multi-pool-real.json`。
+- `internal/router/backend.go` 增强 vLLM Prometheus 解析：`num_requests_running`、`num_requests_waiting`、`gpu_cache_usage_perc` 会进入 load score。
 - `bench/generate_summary.py` 改为真实实验窗口汇总，排除 fake backend 文件。
-- `bench/collect_metrics.py` 修正 `/metrics` URL 到 backend URL 的映射。
+- `bench/collect_metrics.py` 输出 vLLM running/waiting/cache 与 router `/admin/state` 中的 remote utilization、queue depth、KV cache 快照。
 
 ## 9. 复现命令
 

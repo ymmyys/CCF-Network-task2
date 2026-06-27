@@ -1,44 +1,48 @@
 # bench
 
-Minimal experiment layer for comparing router scheduling modes.
+This directory contains the load generator, metrics collector, plotting helpers, and summary generator used by the router experiments.
 
-## 1. Start fake backends
+## Formal Real-NPU Flow
 
-```bash
-python3 bench/fake_backend.py --port 9001 --metrics-port 9101 --id ascend-910b-a --latency-ms 80
-python3 bench/fake_backend.py --port 9002 --metrics-port 9102 --id ascend-910b-b --latency-ms 80
-```
-
-## 2. Start router
+Run experiments from the remote host workspace:
 
 ```bash
-go run ./cmd/router -config config/router.example.json
+cd /home/yijq27/workspace/Track1_fuiglwgfnq_repos
+RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
+  scripts/run_real_npu_suite.sh
 ```
 
-Use `scheduler.mode=swrr` for the baseline and `scheduler.mode=p2c_smooth_wrr` for the improved run.
-
-## 3. Generate load
+Generate summaries:
 
 ```bash
-python3 bench/loadgen.py \
-  --url http://127.0.0.1:8080/v1/chat/completions \
-  --duration 30 \
-  --concurrency 64 \
-  --output bench/results.csv
+python3 bench/generate_summary.py \
+  --results-dir bench/results/real-npu-20260627021640 \
+  --output-dir bench/results/real-npu-20260627021640/analysis
 ```
 
-## 4. Inject a capacity drop
+The current metrics-driven exp2 rerun lives in:
 
-```bash
-python3 bench/inject_capacity.py \
-  --admin http://127.0.0.1:8081 \
-  --event 10,default,ascend-910b-a,1
+```text
+bench/results/real-npu-metrics-exp2-20260627203104/
 ```
 
-## 5. Plot
+## Important Scripts
 
-```bash
-python3 bench/plot_results.py --input bench/results.csv --output bench/results.png
-```
+| File | Purpose |
+|---|---|
+| `loadgen.py` | OpenAI-compatible load generator |
+| `collect_metrics.py` | vLLM `/metrics` plus router `/admin/state` sampler |
+| `generate_summary.py` | real NPU CSV summary and window statistics |
+| `plot_results.py` | optional latency/QPS plots |
+| `inject_capacity.py` | admin API capacity event injector |
+| `fake_backend.py` | development fixture only, not formal evidence |
 
-If matplotlib is not installed, the script still writes a summary CSV next to the input file.
+## Baseline Definition
+
+For formal comparisons:
+
+- baseline: `scheduler.mode=swrr` with `config/router.qwen15b-5backends-swrr.json`, intentionally without `metrics_url`;
+- improved: `scheduler.mode=p2c_smooth_wrr` with vLLM `/metrics`;
+- balanced improved: `p2c_smooth_wrr` plus `balanced_p2c=true`, also with vLLM `/metrics`.
+
+Fake backends are useful for local deterministic tests, but formal report conclusions only use real Ascend NPU 3-7 data.

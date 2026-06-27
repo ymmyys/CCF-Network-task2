@@ -20,7 +20,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | 实验 | 脚本 | 输出 |
 |---|---|---|
 | exp1 均衡基线 | `run_experiment1.sh` | `exp1-real-*.csv` |
-| exp2 真实热点压力 | `run_experiment2_real.sh` | `exp2-real-hotspot-*.csv` |
+| exp2 真实热点压力 | `run_experiment2_real.sh` | `exp2-real-hotspot-*.csv`, `exp2-real-hotspot-*-metrics.csv` |
 | exp3 动态 capacity | `run_experiment3.sh` | `exp3-real-capacity-p2c.csv` |
 | exp4 真实故障恢复 | `run_experiment4.sh` | `exp4-real-failure-p2c.csv` |
 | exp5 资源池隔离 | `run_experiment5_noisy.sh` | `exp5-real-default.csv`, `exp5-real-isolated.csv` |
@@ -71,6 +71,19 @@ analysis/real_npu_summary.md
 ```
 
 该汇总器只读取 `exp*-real-*.csv` 这类真实实验文件，不读取 fake backend 文件。
+
+exp2 的 `*-metrics.csv` 会额外记录：
+
+```text
+num_requests_running
+num_requests_waiting
+kv_cache_usage
+router_remote_utilization
+router_queue_depth
+router_kv_cache_usage
+```
+
+SWRR 配置故意不配置 `metrics_url`，作为静态 baseline；P2C 和 balanced P2C 配置 vLLM `/metrics`，用于验证实时负载感知。
 
 ## 开发夹具
 

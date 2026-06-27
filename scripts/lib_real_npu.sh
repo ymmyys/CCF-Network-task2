@@ -16,7 +16,9 @@ if [ -z "$SHORT_BODY" ]; then
 fi
 
 if [ -z "$LONG_BODY" ]; then
-  LONG_BODY="{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a detailed technical note about distributed inference scheduling, including dynamic capacity, health checks, queueing, and tail latency control.\"}],\"max_tokens\":256,\"temperature\":0}"
+  LONG_PROMPT="Write a detailed technical note about distributed inference scheduling. Cover dynamic capacity, health checks, queueing, tail latency control, KV cache pressure, slow-start recovery, passive ejection, and multi-pool isolation. Repeat the analysis with concrete examples, tradeoffs, and failure scenarios. Include a step-by-step reasoning section and a final operational checklist. "
+  LONG_PROMPT="${LONG_PROMPT}${LONG_PROMPT}${LONG_PROMPT}${LONG_PROMPT}"
+  LONG_BODY="{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"${LONG_PROMPT}\"}],\"max_tokens\":512,\"temperature\":0}"
 fi
 
 ensure_results_dir() {

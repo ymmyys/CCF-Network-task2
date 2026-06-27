@@ -372,6 +372,26 @@ vllm:time_to_first_token_seconds_created{engine="0",model_name="qwen2.5-0.5b-ins
 	}
 }
 
+func TestMetricsSampleParsesVLLMEngineLoadSignals(t *testing.T) {
+	sample := parseMetricsSample([]byte(`
+vllm:num_requests_running{engine="0",model_name="qwen2.5-1.5b-instruct"} 8.0
+vllm:num_requests_waiting{engine="0",model_name="qwen2.5-1.5b-instruct"} 3.0
+vllm:gpu_cache_usage_perc{engine="0",model_name="qwen2.5-1.5b-instruct"} 75.0
+`), LoadPolicy{
+		QueueSoftLimit: 16,
+	})
+
+	if sample.utilization != 0.5 {
+		t.Fatalf("utilization = %v, want 0.5", sample.utilization)
+	}
+	if sample.queueDepth != 3 {
+		t.Fatalf("queue depth = %v, want 3", sample.queueDepth)
+	}
+	if sample.kvCache != 0.75 {
+		t.Fatalf("kv cache = %v, want 0.75", sample.kvCache)
+	}
+}
+
 func TestMetricsSampleIgnoresNonFiniteValues(t *testing.T) {
 	sample := parseMetricsSample([]byte(`
 npu_utilization_rate NaN

@@ -235,7 +235,7 @@ RESULTS_DIR=bench/results/real-npu-manual scripts/run_smoothstep_experiment.sh
 | 实验 | 脚本 | 真实资源 |
 |---|---|---|
 | exp1 | `run_experiment1.sh` | direct、5 后端 `swrr/p2c/balanced` |
-| exp2 | `run_experiment2_real.sh` | NPU3 direct 长 prompt 压力 + 5 后端测量流量 |
+| exp2 | `run_experiment2_real.sh` | NPU3 direct 长 prompt 压力 + 5 后端测量流量 + vLLM/router 指标采样 |
 | exp3 | `run_experiment3.sh` | NPU3 capacity 10->1->10 |
 | exp4 | `run_experiment4.sh` | 只 stop/start `yijq27-vllm-qwen15b-5` |
 | exp5 | `run_experiment5_noisy.sh` | default=NPU3/4，isolated=NPU5/6/7 |
@@ -255,6 +255,7 @@ bench/results/real-npu-20260627021640/
 ```text
 analysis/real_npu_summary.csv
 analysis/real_npu_summary.md
+exp2-real-hotspot-*-metrics.csv
 snapshots/*.state.json
 snapshots/*.metrics.txt
 npu-smi-before.txt
@@ -268,6 +269,14 @@ python3 bench/generate_summary.py \
   --results-dir bench/results/real-npu-20260627021640 \
   --output-dir bench/results/real-npu-20260627021640/analysis
 ```
+
+exp2 单独重跑后的指标驱动结果目录：
+
+```text
+bench/results/real-npu-metrics-exp2-20260627203104/
+```
+
+该实验的 baseline 是 `config/router.qwen15b-5backends-swrr.json`，不配置 `metrics_url`，只按静态 capacity 做 SWRR；`config/router.qwen15b-5backends-p2c.json` 和 `config/router.qwen15b-5backends-balanced.json` 配置 vLLM `/metrics`，用于验证 `num_requests_running` 等真实指标触发避热点。
 
 ## 9. 停止与清理
 

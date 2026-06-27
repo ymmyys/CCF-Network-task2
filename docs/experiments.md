@@ -7,6 +7,7 @@
 验证 `suan-router` 在真实 Ascend NPU 推理集群中的动态调度能力：
 
 - 正常均衡场景下，动态调度没有明显额外开销；
+- 对单个真实后端形成 external pressure 时，调度器能根据 vLLM `/metrics` 降低热点节点被选中概率；
 - capacity 10->1->10 时，新请求平滑迁移，已分配请求不中断；
 - backend 故障时自动摘除，恢复后 slow-start；
 - 多资源池并发时隔离有效；
@@ -33,7 +34,7 @@ bench/results/real-npu-20260627021640/
 | 实验 | 脚本 | 目的 | 验收口径 |
 |---|---|---|---|
 | exp1 | `scripts/run_experiment1.sh` | 均衡场景开销 | `p2c_smooth_wrr` 与 `swrr` QPS/p99 接近，0 错误 |
-| exp2 | `scripts/run_experiment2_real.sh` | 外部真实压力边界 | 记录 NPU3 占比；若 vLLM 指标未形成热点，不宣称避让优势 |
+| exp2 | `scripts/run_experiment2_real.sh` | 外部真实压力避热点 | SWRR baseline 维持约 20%；P2C 组根据 `remote_utilization` 显著降低 NPU3 占比 |
 | exp3 | `scripts/run_experiment3.sh` | capacity 平滑迁移 | stable down 占比接近 2.44%，0 错误 |
 | exp4 | `scripts/run_experiment4.sh` | 真实故障恢复 | 只 stop/start `yijq27-vllm-qwen15b-5`，fail stable 占比接近 0 |
 | exp5 | `scripts/run_experiment5_noisy.sh` | 资源池隔离 | default 池在 isolated 高压下 0 错误 |
@@ -48,7 +49,7 @@ bench/results/real-npu-20260627021640/
 - per-backend request share；
 - `/admin/state` 中的 phase、capacity、desired/effective weight、inflight；
 - `/metrics` 中的 router 状态；
-- vLLM metrics 采样用于综合剧本辅助分析。
+- vLLM `num_requests_running`、`num_requests_waiting`、GPU/KV cache usage；
 
 ## Reproduction
 
@@ -69,9 +70,8 @@ python3 bench/generate_summary.py \
 ## Current Outcome
 
 - exp1：`p2c_smooth_wrr` 246.46 QPS，`swrr` 247.41 QPS，均 0 错误。
+- exp2：NPU3 direct 压力下，SWRR baseline NPU3 share 19.96%；`p2c_smooth_wrr` share 0.00%；`balanced_p2c` share 3.94%。
 - exp3：NPU3 stable down 2.37%，理论 2.44%，29,748 请求 0 错误。
 - exp4：NPU5 fail stable 0.02%，recovery end 19.80%，72,794 请求 3 错误。
 - exp5：default 池 28,218 请求 0 错误，isolated 池 1,592 请求 0 错误。
 - exp7：smoothStep=0.25 stable down 2.31%，误差 0.13pp。
-
-exp2 当前结论是边界：真实 external direct pressure 没有在 vLLM 指标中形成明显热点，所以不能把它写成优势证明。

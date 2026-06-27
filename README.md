@@ -55,10 +55,16 @@ docker exec yijq27-cann851 bash -lc '
 
 ## Real NPU Experiments
 
-最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。实验结果目录：
+最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。完整实验结果目录：
 
 ```text
 bench/results/real-npu-20260627021640/
+```
+
+针对评审指出的“实时负载指标未生效”问题，已经补充重跑 exp2 指标驱动热点压力实验：
+
+```text
+bench/results/real-npu-metrics-exp2-20260627203104/
 ```
 
 统一汇总：
@@ -66,6 +72,7 @@ bench/results/real-npu-20260627021640/
 ```text
 bench/results/real-npu-20260627021640/analysis/real_npu_summary.csv
 bench/results/real-npu-20260627021640/analysis/real_npu_summary.md
+bench/results/real-npu-metrics-exp2-20260627203104/analysis/real_npu_summary.csv
 ```
 
 一键重跑：
@@ -86,11 +93,12 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | 能力 | 真实 NPU 结果 |
 |---|---|
 | 均衡开销 | `swrr` 247.41 QPS，`p2c_smooth_wrr` 246.46 QPS，二者 0 错误 |
+| 实时负载避热点 | NPU3 direct 长请求压力下，SWRR 仍给 NPU3 19.96% 流量；`p2c_smooth_wrr` 读到 `remote_utilization=1.0` 后降到 0.00%；`balanced_p2c` 保留 3.94% 探测流量 |
 | 动态降容 | `qwen15b-npu3` capacity 10->1 后稳定占比 2.37%，理论 2.44%，29,748 请求 0 错误 |
 | 故障恢复 | 停止 `yijq27-vllm-qwen15b-5` 后 `fail_stable` 占比 0.02%，全程 72,794 请求 3 错误 |
 | 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池真实长请求 1,592 请求 0 错误 |
 | smoothStep | `0.25` 稳定降容占比 2.31%，误差 0.13pp；`0.5/1.0` 收敛更快但更接近硬切换 |
 
-真实热点压力 exp2 使用 direct long-prompt 负载压 NPU3，但 vLLM 指标没有形成可观测 waiting/KV 高水位，三种调度器目标占比都约 20%。因此它作为边界说明，不作为“外部压力自动避让”的优势证明。
+exp2 的 baseline 是 `config/router.qwen15b-5backends-swrr.json`：它不配置 `metrics_url`，只按静态 capacity 做平滑加权轮询。改进组 `p2c_smooth_wrr` 与 `balanced_p2c` 配置 vLLM `/metrics`，将 `vllm:num_requests_running` 归一化为 `remote_utilization`，并把 `vllm:num_requests_waiting`、GPU/KV cache 指标纳入 load score。这样可以直接验证赛题要求的“根据节点实时负载动态调整被选中概率”。
 
 完整报告见 [`docs/final-report.md`](docs/final-report.md)，实验数据说明见 [`docs/experiment-results.md`](docs/experiment-results.md)。

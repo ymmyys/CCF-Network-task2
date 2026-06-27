@@ -31,7 +31,7 @@ router :8180/:8181
 | ID | 名称 | 时长 | 并发 | 事件 |
 |---|---|---:|---:|---|
 | exp1 | 均衡基线 | 60s/组 | 32 | direct、swrr、p2c、balanced |
-| exp2 | 外部热点压力 | 90s/组 | 32 + direct pressure 32 | NPU3 长 prompt 背景压力 |
+| exp2 | 外部热点压力 | 90s/组 | 32 + direct pressure 32 | NPU3 长 prompt 背景压力，采集 vLLM `/metrics` 与 router `/admin/state` |
 | exp3 | 动态 capacity | 120s | 32 | 30s: 10->1；80s: 1->10 |
 | exp4 | 故障恢复 | 300s | 32 | 30s stop NPU5；90s start NPU5 |
 | exp5 | 资源池隔离 | 120s | default 32 / isolated 96 | 两个真实资源池并行 |
@@ -44,7 +44,7 @@ router :8180/:8181
 - 实验期间不停止非指定容器。
 - router 只清理 PID 文件记录的本项目进程。
 - exp3/exp7 的 stable down 使用分窗口统计，不混入 transition。
-- exp2 若没有形成可观测 vLLM queue/KV 高水位，只作为边界说明。
+- exp2 baseline 使用静态 SWRR；P2C 组必须配置 vLLM `metrics_url`，并证明 NPU3 的 `remote_utilization` 上升后流量占比下降。
 
 ## 5. 当前实测结论
 
@@ -57,6 +57,7 @@ bench/results/real-npu-20260627021640/
 核心结论：
 
 - 均衡开销低：`p2c_smooth_wrr` 相比 `swrr` QPS 只低约 0.38%。
+- 实时负载避热点有效：exp2 中 SWRR baseline 给 NPU3 19.96%，`p2c_smooth_wrr` 降到 0.00%，`balanced_p2c` 降到 3.94%。
 - capacity 迁移准确：exp3 stable down 2.37%，理论 2.44%，0 错误。
 - 故障摘除有效：exp4 fail stable NPU5 占比 0.02%，全程错误率 0.0041%。
 - 资源池隔离有效：default 池在 isolated 池长请求压力下 0 错误。
@@ -64,6 +65,6 @@ bench/results/real-npu-20260627021640/
 
 ## 6. 下一步
 
-- 接入更直接的 Ascend NPU utilization exporter，补强外部热点感知。
+- 接入更直接的 Ascend NPU utilization exporter，补充设备级压力信号。
 - 增加 token-cost-aware inflight。
 - 增加多模型轻量矩阵，覆盖更长 TTFT 和更高 KV cache 压力。

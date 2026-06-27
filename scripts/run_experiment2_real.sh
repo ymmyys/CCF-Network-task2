@@ -10,7 +10,7 @@ cd "$REPO_DIR"
 RESULTS_DIR="${RESULTS_DIR:-bench/results/real-npu-$(date +%Y%m%d%H%M%S)}"
 DURATION="${EXP2_DURATION:-90}"
 CONCURRENCY="${EXP2_CONCURRENCY:-32}"
-PRESSURE_CONCURRENCY="${EXP2_PRESSURE_CONCURRENCY:-8}"
+PRESSURE_CONCURRENCY="${EXP2_PRESSURE_CONCURRENCY:-32}"
 
 source "$SCRIPT_DIR/lib_real_npu.sh"
 require_experiment_tools
@@ -30,6 +30,15 @@ run_hotspot_case() {
   start_router "$config" "$tag"
   snapshot_router "${tag}-start"
 
+  python3 bench/collect_metrics.py \
+    --vllm-urls "http://127.0.0.1:9021/metrics,http://127.0.0.1:9022/metrics,http://127.0.0.1:9026/metrics,http://127.0.0.1:9027/metrics,http://127.0.0.1:9028/metrics" \
+    --backend-ids "qwen15b-npu3,qwen15b-npu4,qwen15b-npu5,qwen15b-npu6,qwen15b-npu7" \
+    --admin-url http://127.0.0.1:${ROUTER_ADMIN_PORT} \
+    --output "$RESULTS_DIR/exp2-real-hotspot-${scheduler}-metrics.csv" \
+    --interval 1.0 \
+    --duration "$DURATION" &
+  local metrics_pid=$!
+
   run_long_load \
     http://127.0.0.1:9021/v1/chat/completions \
     "$DURATION" "$PRESSURE_CONCURRENCY" \
@@ -43,6 +52,7 @@ run_hotspot_case() {
     "$RESULTS_DIR/exp2-real-hotspot-${scheduler}.csv"
 
   wait "$pressure_pid"
+  wait "$metrics_pid" || true
   snapshot_router "${tag}-end"
   plot_if_possible "$RESULTS_DIR/exp2-real-hotspot-${scheduler}.csv" "$RESULTS_DIR/plots/exp2-real-hotspot-${scheduler}.png"
   stop_tracked_router

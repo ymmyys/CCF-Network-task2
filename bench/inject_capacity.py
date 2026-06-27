@@ -29,7 +29,7 @@ def post_capacity(admin, pool, backend, capacity):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--admin", default="http://127.0.0.1:8081")
+    parser.add_argument("--admin", default="http://127.0.0.1:8181")
     parser.add_argument("--event", action="append", type=parse_event, required=True)
     args = parser.parse_args()
 

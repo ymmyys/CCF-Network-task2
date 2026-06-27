@@ -529,6 +529,8 @@ func parsePrometheusMetrics(text string, policy LoadPolicy) metricsSample {
 			sample.kvCache = math.Max(sample.kvCache, normalizeKVCacheMetric(name, value, policy.KVCacheSoftLimit))
 		case looksLikeLatencyMetric(name):
 			sample.latencyMS = math.Max(sample.latencyMS, normalizeLatencyMillis(name, value))
+		case looksLikeActiveRequestMetric(name):
+			sample.utilization = math.Max(sample.utilization, normalizeActiveRequestMetric(value, policy.QueueSoftLimit))
 		case looksLikeUtilizationMetric(name):
 			sample.utilization = math.Max(sample.utilization, normalizeRatio(value))
 		case looksLikeQueueMetric(name):
@@ -553,7 +555,7 @@ func looksLikeUtilizationMetric(name string) bool {
 	if strings.Contains(name, "memory") || strings.Contains(name, "hbm") {
 		return false
 	}
-	if looksLikeKVCacheMetric(name) || looksLikeLatencyMetric(name) {
+	if looksLikeKVCacheMetric(name) || looksLikeLatencyMetric(name) || looksLikeQueueMetric(name) || looksLikeActiveRequestMetric(name) {
 		return false
 	}
 	return strings.Contains(name, "npu_util") ||
@@ -562,6 +564,16 @@ func looksLikeUtilizationMetric(name string) bool {
 		strings.Contains(name, "gpu_util") ||
 		strings.Contains(name, "device_util") ||
 		strings.Contains(name, "utilization_rate")
+}
+
+func looksLikeActiveRequestMetric(name string) bool {
+	if isPrometheusHistogramPart(name) {
+		return false
+	}
+	return strings.Contains(name, "num_requests_running") ||
+		strings.Contains(name, "requests_running") ||
+		strings.Contains(name, "running_requests") ||
+		strings.Contains(name, "running_request")
 }
 
 func looksLikeQueueMetric(name string) bool {
@@ -579,6 +591,9 @@ func looksLikeQueueMetric(name string) bool {
 func looksLikeKVCacheMetric(name string) bool {
 	return strings.Contains(name, "kv_cache") ||
 		strings.Contains(name, "kvcache") ||
+		strings.Contains(name, "gpu_cache") ||
+		strings.Contains(name, "cpu_cache") ||
+		strings.Contains(name, "cache_usage") ||
 		strings.Contains(name, "cache_block")
 }
 
@@ -617,6 +632,7 @@ func normalizeKVCacheMetric(name string, value, softLimit float64) float64 {
 	}
 	if strings.Contains(name, "ratio") ||
 		strings.Contains(name, "rate") ||
+		strings.Contains(name, "perc") ||
 		strings.Contains(name, "percent") ||
 		strings.Contains(name, "util") {
 		return normalizeRatio(value)
@@ -625,6 +641,16 @@ func normalizeKVCacheMetric(name string, value, softLimit float64) float64 {
 		return clamp(value/softLimit, 0, 1)
 	}
 	return normalizeRatio(value)
+}
+
+func normalizeActiveRequestMetric(value, softLimit float64) float64 {
+	if !isFinite(value) || value <= 0 {
+		return 0
+	}
+	if !isFinite(softLimit) || softLimit <= 0 {
+		softLimit = 16
+	}
+	return clamp(value/softLimit, 0, 1)
 }
 
 func normalizeLatencyMillis(name string, value float64) float64 {

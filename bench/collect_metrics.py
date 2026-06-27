@@ -38,6 +38,9 @@ def collect_vllm_metrics(metrics_url):
             # 计算关键指标
             result = {
                 'timestamp': datetime.now().isoformat(),
+                'num_requests_running': 0,
+                'num_requests_waiting': 0,
+                'kv_cache_usage': 0,
                 'ttft_p50_ms': 0,
                 'ttft_p95_ms': 0,
                 'ttft_p99_ms': 0,
@@ -53,6 +56,13 @@ def collect_vllm_metrics(metrics_url):
                 'requests_total': 0,
                 'requests_per_second': 0,
             }
+
+            result['num_requests_running'] = metrics.get('vllm:num_requests_running', 0)
+            result['num_requests_waiting'] = metrics.get('vllm:num_requests_waiting', 0)
+            result['kv_cache_usage'] = max(
+                metrics.get('vllm:kv_cache_usage_perc', 0),
+                metrics.get('vllm:gpu_cache_usage_perc', 0),
+            )
             
             # 提取TTFT
             ttft_sum = metrics.get('vllm:time_to_first_token_seconds_sum', 0)
@@ -114,6 +124,9 @@ def main():
             'timestamp',
             'backend_id',
             'requests_total',
+            'num_requests_running',
+            'num_requests_waiting',
+            'kv_cache_usage',
             'ttft_avg_ms',
             'tpot_avg_ms',
             'queue_time_avg_ms',
@@ -122,7 +135,11 @@ def main():
             'router_capacity',
             'router_effective_weight',
             'router_desired_weight',
-            'router_inflight'
+            'router_inflight',
+            'router_remote_utilization',
+            'router_queue_depth',
+            'router_kv_cache_usage',
+            'router_latency_ewma_ms'
         ])
         
         start_time = time.time()
@@ -151,12 +168,19 @@ def main():
                                         'effective_weight': backend.get('effective_weight', 0),
                                         'desired_weight': backend.get('desired_weight', 0),
                                         'inflight': backend.get('inflight', 0),
+                                        'remote_utilization': backend.get('remote_utilization', 0),
+                                        'queue_depth': backend.get('queue_depth', 0),
+                                        'kv_cache_usage': backend.get('kv_cache_usage', 0),
+                                        'latency_ewma_ms': backend.get('latency_ewma_ms', 0),
                                     }
                     
                     writer.writerow([
                         metrics.get('timestamp', ''),
                         backend_id,
                         metrics.get('requests_total', 0),
+                        metrics.get('num_requests_running', 0),
+                        metrics.get('num_requests_waiting', 0),
+                        metrics.get('kv_cache_usage', 0),
                         metrics.get('ttft_avg_ms', 0),
                         metrics.get('tpot_avg_ms', 0),
                         metrics.get('queue_time_avg_ms', 0),
@@ -166,6 +190,10 @@ def main():
                         router_info.get('effective_weight', 0),
                         router_info.get('desired_weight', 0),
                         router_info.get('inflight', 0),
+                        router_info.get('remote_utilization', 0),
+                        router_info.get('queue_depth', 0),
+                        router_info.get('kv_cache_usage', 0),
+                        router_info.get('latency_ewma_ms', 0),
                     ])
             
             time.sleep(args.interval)

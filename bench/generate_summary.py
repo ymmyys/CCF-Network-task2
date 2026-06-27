@@ -28,6 +28,12 @@ FIELDS = [
     "target_share_pct",
     "expected_share_pct",
     "absolute_share_error_pct",
+    "max_target_running",
+    "max_target_waiting",
+    "max_target_kv_cache_usage",
+    "max_target_remote_utilization",
+    "max_target_queue_depth",
+    "max_target_router_kv_cache_usage",
     "backend_distribution",
     "main_conclusion",
     "notes",
@@ -152,6 +158,26 @@ def make_row(results_dir, experiment_id, scheduler, filename, conclusion, notes=
     return row
 
 
+def metrics_signal_stats(results_dir, filename, backend_id):
+    path = results_dir / filename
+    rows = load_rows(path)
+    if not rows:
+        return {}
+
+    selected = [row for row in rows if row.get("backend_id") == backend_id]
+    if not selected:
+        return {}
+
+    return {
+        "max_target_running": max(safe_float(row.get("num_requests_running")) for row in selected),
+        "max_target_waiting": max(safe_float(row.get("num_requests_waiting")) for row in selected),
+        "max_target_kv_cache_usage": round(max(safe_float(row.get("kv_cache_usage")) for row in selected), 6),
+        "max_target_remote_utilization": round(max(safe_float(row.get("router_remote_utilization")) for row in selected), 6),
+        "max_target_queue_depth": round(max(safe_float(row.get("router_queue_depth")) for row in selected), 6),
+        "max_target_router_kv_cache_usage": round(max(safe_float(row.get("router_kv_cache_usage")) for row in selected), 6),
+    }
+
+
 def collect_summaries(results_dir):
     summaries = []
 
@@ -172,12 +198,19 @@ def collect_summaries(results_dir):
         ("p2c_smooth_wrr", "exp2-real-hotspot-p2c.csv"),
         ("balanced_p2c", "exp2-real-hotspot-balanced.csv"),
     ]:
-        summaries.append(make_row(
+        row = make_row(
             results_dir, "exp2", scheduler, filename,
             "real hotspot pressure on qwen15b-npu3",
             "background pressure is direct long-prompt load against NPU3",
             target_backend="qwen15b-npu3",
-        ))
+        )
+        metric_tag = scheduler
+        if scheduler == "p2c_smooth_wrr":
+            metric_tag = "p2c"
+        if scheduler == "balanced_p2c":
+            metric_tag = "balanced"
+        row.update(metrics_signal_stats(results_dir, f"exp2-real-hotspot-{metric_tag}-metrics.csv", "qwen15b-npu3"))
+        summaries.append(row)
 
     exp3_windows = [
         ("pre_0_30", 0, 30, None),
