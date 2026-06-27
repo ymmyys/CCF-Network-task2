@@ -59,8 +59,8 @@ done
 
 ```bash
 python3 bench/generate_summary.py \
-  --results-dir bench/results/real-npu-20260627021640 \
-  --output-dir bench/results/real-npu-20260627021640/analysis
+  --results-dir bench/results/formal \
+  --output-dir bench/results/formal/analysis
 ```
 
 输出：

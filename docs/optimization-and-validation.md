@@ -47,7 +47,7 @@ balanced P2C 只对 healthy 且 schedulable 的慢后端保留受控流量；unh
 最新结果：
 
 ```text
-bench/results/real-npu-20260627021640/analysis/real_npu_summary.csv
+bench/results/formal/analysis/real_npu_summary.csv
 ```
 
 | 能力 | 结果 |
@@ -66,7 +66,7 @@ bench/results/real-npu-20260627021640/analysis/real_npu_summary.csv
 重跑结果目录：
 
 ```text
-bench/results/real-npu-metrics-exp2-20260627203104/
+bench/results/formal/exp2-hotspot-load/
 ```
 
 | 调度器 | NPU3 占比 | p95 | p99 | NPU3 max running | router max remote_utilization |

@@ -26,7 +26,7 @@
 正式数据目录：
 
 ```text
-bench/results/real-npu-20260627021640/
+bench/results/formal/
 ```
 
 ## Experiments
@@ -63,8 +63,8 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 
 ```bash
 python3 bench/generate_summary.py \
-  --results-dir bench/results/real-npu-20260627021640 \
-  --output-dir bench/results/real-npu-20260627021640/analysis
+  --results-dir bench/results/formal \
+  --output-dir bench/results/formal/analysis
 ```
 
 ## Current Outcome

@@ -8,9 +8,9 @@ All rows are generated from real Ascend NPU experiment CSV files. Fake-backend f
 | exp1 | swrr | all | 14842 | 0 | 247.41 | 128.48 | 148.08 | 156.44 | - | real NPU balanced baseline |
 | exp1 | p2c_smooth_wrr | all | 14788 | 0 | 246.46 | 129.57 | 148.41 | 156.53 | - | real NPU balanced baseline |
 | exp1 | balanced_p2c | all | 14732 | 0 | 245.48 | 129.74 | 149.72 | 158.0 | - | real NPU balanced baseline |
-| exp2 | swrr | all | 21713 | 0 | 241.16 | 130.68 | 157.86 | 170.54 | 19.93 | real hotspot pressure on qwen15b-npu3 |
-| exp2 | p2c_smooth_wrr | all | 21669 | 0 | 240.76 | 130.94 | 155.94 | 173.51 | 19.91 | real hotspot pressure on qwen15b-npu3 |
-| exp2 | balanced_p2c | all | 21607 | 0 | 240.01 | 131.37 | 157.19 | 171.16 | 19.93 | real hotspot pressure on qwen15b-npu3 |
+| exp2 | swrr | all | 14179 | 0 | 236.45 | 133.7 | 154.65 | 178.44 | 19.96 | real hotspot pressure on qwen15b-npu3 |
+| exp2 | p2c_smooth_wrr | all | 14447 | 0 | 240.81 | 132.3 | 148.74 | 158.73 | 0.0 | real hotspot pressure on qwen15b-npu3 |
+| exp2 | balanced_p2c | all | 14429 | 0 | 240.42 | 132.5 | 149.97 | 157.72 | 3.94 | real hotspot pressure on qwen15b-npu3 |
 | exp3 | p2c_smooth_wrr | pre_0_30 | 7374 | 0 | 245.8 | 129.68 | 150.01 | 158.49 | 19.96 | capacity 10->1->10 smooth migration |
 | exp3 | p2c_smooth_wrr | transition_down_30_40 | 2485 | 0 | 248.5 | 128.02 | 147.9 | 155.19 | 6.08 | capacity 10->1->10 smooth migration |
 | exp3 | p2c_smooth_wrr | stable_down_40_80 | 9956 | 0 | 248.9 | 127.25 | 147.52 | 154.63 | 2.37 | capacity 10->1->10 smooth migration |

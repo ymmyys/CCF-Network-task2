@@ -16,14 +16,14 @@ Generate summaries:
 
 ```bash
 python3 bench/generate_summary.py \
-  --results-dir bench/results/real-npu-20260627021640 \
-  --output-dir bench/results/real-npu-20260627021640/analysis
+  --results-dir bench/results/formal \
+  --output-dir bench/results/formal/analysis
 ```
 
-The current metrics-driven exp2 rerun lives in:
+The recorded formal results are grouped by experiment in:
 
 ```text
-bench/results/real-npu-metrics-exp2-20260627203104/
+bench/results/formal/
 ```
 
 ## Important Scripts

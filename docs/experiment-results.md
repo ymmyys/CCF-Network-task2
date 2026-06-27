@@ -1,16 +1,18 @@
 # Real Ascend NPU Experiment Results
 
-最新正式实验数据已经记录到仓库，目录如下：
+最新正式实验数据已经记录到仓库，并按实验编号整理：
 
 ```text
-bench/results/real-npu-20260627021640/
+bench/results/formal/exp1-balanced-baseline/
+bench/results/formal/exp2-hotspot-load/
+bench/results/formal/exp3-dynamic-capacity/
+bench/results/formal/exp4-failure-recovery/
+bench/results/formal/exp5-pool-isolation/
+bench/results/formal/exp6-comprehensive/
+bench/results/formal/exp7-smoothstep/
 ```
 
-该目录由 `scripts/run_real_npu_suite.sh` 生成。后续针对实时负载感知短板，单独重跑了 exp2 指标驱动热点压力实验：
-
-```text
-bench/results/real-npu-metrics-exp2-20260627203104/
-```
+exp1、exp3、exp4、exp5、exp6、exp7 来自完整真实 NPU suite；exp2 来自指标修复后的热点压力重跑。
 
 正式结果全部来自真实 Ascend NPU 3-7。
 
@@ -51,8 +53,9 @@ bench/results/real-npu-metrics-exp2-20260627203104/
 analysis/real_npu_summary.csv
 analysis/real_npu_summary.md
 exp2-real-hotspot-*-metrics.csv
-snapshots/*.state.json
-snapshots/*.metrics.txt
+exp*/README.md
+exp*/*.state.json
+exp*/*.metrics.txt
 npu-smi-before.txt
 npu-smi-after.txt
 ```
@@ -61,12 +64,8 @@ npu-smi-after.txt
 
 ```bash
 python3 bench/generate_summary.py \
-  --results-dir bench/results/real-npu-20260627021640 \
-  --output-dir bench/results/real-npu-20260627021640/analysis
-
-python3 bench/generate_summary.py \
-  --results-dir bench/results/real-npu-metrics-exp2-20260627203104 \
-  --output-dir bench/results/real-npu-metrics-exp2-20260627203104/analysis
+  --results-dir bench/results/formal \
+  --output-dir bench/results/formal/analysis
 ```
 
 完整分析见 [`final-report.md`](final-report.md)。

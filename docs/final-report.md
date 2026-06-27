@@ -89,9 +89,9 @@ active -> draining -> drained -> recovering -> active
 | Router 容器 | `yijq27-cann851` |
 | vLLM 镜像 | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
 | 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
-| 完整结果目录 | `bench/results/real-npu-20260627021640/` |
-| 指标驱动 exp2 重跑目录 | `bench/results/real-npu-metrics-exp2-20260627203104/` |
-| 汇总文件 | `analysis/real_npu_summary.csv` |
+| 正式结果目录 | `bench/results/formal/`，按 exp1-exp7 分目录 |
+| 指标驱动 exp2 数据 | `bench/results/formal/exp2-hotspot-load/` |
+| 汇总文件 | `bench/results/formal/analysis/real_npu_summary.csv` |
 
 正式主结论只引用真实 NPU 数据。fake backend 只作为开发夹具，不进入本报告主证据链。
 

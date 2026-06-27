@@ -55,24 +55,26 @@ docker exec yijq27-cann851 bash -lc '
 
 ## Real NPU Experiments
 
-最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。完整实验结果目录：
+最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。实验数据已按实验编号整理：
 
 ```text
-bench/results/real-npu-20260627021640/
+bench/results/formal/
+bench/results/formal/exp1-balanced-baseline/
+bench/results/formal/exp2-hotspot-load/
+bench/results/formal/exp3-dynamic-capacity/
+bench/results/formal/exp4-failure-recovery/
+bench/results/formal/exp5-pool-isolation/
+bench/results/formal/exp6-comprehensive/
+bench/results/formal/exp7-smoothstep/
 ```
 
-针对评审指出的“实时负载指标未生效”问题，已经补充重跑 exp2 指标驱动热点压力实验：
-
-```text
-bench/results/real-npu-metrics-exp2-20260627203104/
-```
+其中 exp2 目录只保留指标修复后的正式热点压力重跑数据。
 
 统一汇总：
 
 ```text
-bench/results/real-npu-20260627021640/analysis/real_npu_summary.csv
-bench/results/real-npu-20260627021640/analysis/real_npu_summary.md
-bench/results/real-npu-metrics-exp2-20260627203104/analysis/real_npu_summary.csv
+bench/results/formal/analysis/real_npu_summary.csv
+bench/results/formal/analysis/real_npu_summary.md
 ```
 
 一键重跑：

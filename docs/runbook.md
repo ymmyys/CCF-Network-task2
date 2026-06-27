@@ -247,7 +247,7 @@ RESULTS_DIR=bench/results/real-npu-manual scripts/run_smoothstep_experiment.sh
 最新正式结果：
 
 ```text
-bench/results/real-npu-20260627021640/
+bench/results/formal/
 ```
 
 重点文件：
@@ -255,25 +255,29 @@ bench/results/real-npu-20260627021640/
 ```text
 analysis/real_npu_summary.csv
 analysis/real_npu_summary.md
-exp2-real-hotspot-*-metrics.csv
-snapshots/*.state.json
-snapshots/*.metrics.txt
-npu-smi-before.txt
-npu-smi-after.txt
+exp1-balanced-baseline/
+exp2-hotspot-load/
+exp3-dynamic-capacity/
+exp4-failure-recovery/
+exp5-pool-isolation/
+exp6-comprehensive/
+exp7-smoothstep/
+system/npu-smi-before.txt
+system/npu-smi-after.txt
 ```
 
 重新生成汇总：
 
 ```bash
 python3 bench/generate_summary.py \
-  --results-dir bench/results/real-npu-20260627021640 \
-  --output-dir bench/results/real-npu-20260627021640/analysis
+  --results-dir bench/results/formal \
+  --output-dir bench/results/formal/analysis
 ```
 
-exp2 单独重跑后的指标驱动结果目录：
+exp2 单独重跑后的指标驱动结果目录已经整理为：
 
 ```text
-bench/results/real-npu-metrics-exp2-20260627203104/
+bench/results/formal/exp2-hotspot-load/
 ```
 
 该实验的 baseline 是 `config/router.qwen15b-5backends-swrr.json`，不配置 `metrics_url`，只按静态 capacity 做 SWRR；`config/router.qwen15b-5backends-p2c.json` 和 `config/router.qwen15b-5backends-balanced.json` 配置 vLLM `/metrics`，用于验证 `num_requests_running` 等真实指标触发避热点。

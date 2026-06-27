@@ -40,6 +40,25 @@ FIELDS = [
 ]
 
 
+def resolve_result_file(results_dir, filename):
+    direct = results_dir / filename
+    if direct.exists():
+        return direct
+    matches = sorted(path for path in results_dir.rglob(filename) if path.is_file())
+    if matches:
+        return matches[0]
+    return direct
+
+
+def display_path(results_dir, path, fallback):
+    if path.exists():
+        try:
+            return str(path.relative_to(results_dir))
+        except ValueError:
+            return str(path)
+    return fallback
+
+
 def load_rows(path):
     if not path.exists():
         return []
@@ -141,13 +160,13 @@ def window_stats(rows, start_sec=None, end_sec=None, target_backend="", expected
 
 def make_row(results_dir, experiment_id, scheduler, filename, conclusion, notes="", window="all",
              start_sec=None, end_sec=None, target_backend="", expected_share=None):
-    path = results_dir / filename
+    path = resolve_result_file(results_dir, filename)
     rows = load_rows(path)
     stats = window_stats(rows, start_sec, end_sec, target_backend, expected_share)
     row = {
         "experiment_id": experiment_id,
         "scheduler": scheduler,
-        "source_file": filename,
+        "source_file": display_path(results_dir, path, filename),
         "window": window,
         "target_backend": target_backend,
         "expected_share_pct": "" if expected_share is None else expected_share,
@@ -159,7 +178,7 @@ def make_row(results_dir, experiment_id, scheduler, filename, conclusion, notes=
 
 
 def metrics_signal_stats(results_dir, filename, backend_id):
-    path = results_dir / filename
+    path = resolve_result_file(results_dir, filename)
     rows = load_rows(path)
     if not rows:
         return {}
@@ -295,7 +314,7 @@ def collect_summaries(results_dir):
 def write_csv(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=FIELDS, extrasaction="ignore")
+        writer = csv.DictWriter(file, fieldnames=FIELDS, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
