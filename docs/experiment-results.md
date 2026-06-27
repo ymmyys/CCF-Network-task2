@@ -1,6 +1,6 @@
 # Real Ascend NPU Experiment Results
 
-最新正式实验目录：
+最新正式实验数据已经记录到仓库，目录如下：
 
 ```text
 bench/results/real-npu-20260627021640/
@@ -44,6 +44,8 @@ bench/results/real-npu-metrics-exp2-20260627203104/
 - 不进入主结论：fake backend 微基准和旧异构开发夹具。
 
 ## Generated Files
+
+这些文件已随仓库提交，评审可以直接查看或重新生成汇总。
 
 ```text
 analysis/real_npu_summary.csv

@@ -51,7 +51,7 @@ docker exec yijq27-cann851 bash -lc '
 '
 ```
 
-完整操作手册见 [`docs/runbook.md`](docs/runbook.md)。
+完整操作手册见 [`docs/runbook.md`](docs/runbook.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
 ## Real NPU Experiments
 

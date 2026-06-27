@@ -3,4 +3,11 @@ __pycache__/
 *.log
 .DS_Store
 artifacts/
-bench/results/
+bench/results/*
+!bench/results/README.md
+!bench/results/real-npu-20260627021640/
+!bench/results/real-npu-20260627021640/**
+!bench/results/real-npu-metrics-exp2-20260627203104/
+!bench/results/real-npu-metrics-exp2-20260627203104/**
+bench/results/**/plots/
+bench/results/**/plots/**
