@@ -2,7 +2,7 @@
 
 `suan-router` 是面向赛题 2「大模型推理算力资源动态负载感知调度」的 OpenAI-compatible 推理网关。它运行在 vLLM-Ascend 后端之前，根据后端健康状态、capacity、inflight、vLLM 指标和资源池策略动态选择目标 NPU。
 
-## Purpose
+## 项目目标
 
 赛题要求在 Ascend NPU 推理集群中避免热点、支持动态 capacity 变化、节点故障摘除、多资源池隔离，并在 capacity 从 10 降到 1 时平滑迁移新请求而不中断已分配请求。本项目实现了：
 
@@ -13,7 +13,7 @@
 - 高可用：健康检查、被动熔断、代理错误短暂 cooloff、recovering slow-start。
 - 管理面：`/admin/state`、`/admin/capacity`、`/admin/health`、`/metrics`。
 
-## Architecture
+## 系统架构
 
 ```text
 client
@@ -34,7 +34,7 @@ vLLM-Ascend containers on Ascend 910B
 - `internal/router/scheduler.go`：SWRR、P2C、balanced P2C。
 - `internal/router/backend.go`：状态机、健康检查、指标解析、权重计算。
 
-## Quick Start
+## 快速启动
 
 本地运行一个示例配置：
 
@@ -53,7 +53,7 @@ docker exec yijq27-cann851 bash -lc '
 
 完整操作手册见 [`docs/runbook.md`](docs/runbook.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
-## Real NPU Experiments
+## 真实 NPU 实验
 
 最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。实验数据已按实验编号整理：
 
@@ -90,7 +90,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 - 只有故障实验会停止/启动 `yijq27-vllm-qwen15b-5`。
 - router 只通过 PID 文件清理自己启动的进程，不使用宽泛 `pkill`。
 
-## Current Real Results
+## 当前真实实验结果
 
 | 能力 | 真实 NPU 结果 |
 |---|---|
@@ -101,6 +101,6 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池真实长请求 1,592 请求 0 错误 |
 | smoothStep | `0.25` 稳定降容占比 2.31%，误差 0.13pp；`0.5/1.0` 收敛更快但更接近硬切换 |
 
-exp2 的 baseline 是 `config/router.qwen15b-5backends-swrr.json`：它不配置 `metrics_url`，只按静态 capacity 做平滑加权轮询。改进组 `p2c_smooth_wrr` 与 `balanced_p2c` 配置 vLLM `/metrics`，将 `vllm:num_requests_running` 归一化为 `remote_utilization`，并把 `vllm:num_requests_waiting`、GPU/KV cache 指标纳入 load score。这样可以直接验证赛题要求的“根据节点实时负载动态调整被选中概率”。
+exp2 的基线是 `config/router.qwen15b-5backends-swrr.json`：它不配置 `metrics_url`，只按静态 capacity 做平滑加权轮询。改进组 `p2c_smooth_wrr` 与 `balanced_p2c` 配置 vLLM `/metrics`，将 `vllm:num_requests_running` 归一化为 `remote_utilization`，并把 `vllm:num_requests_waiting`、GPU/KV cache 指标纳入负载评分。这样可以直接验证赛题要求的“根据节点实时负载动态调整被选中概率”。
 
 完整报告见 [`docs/final-report.md`](docs/final-report.md)，实验数据说明见 [`docs/experiment-results.md`](docs/experiment-results.md)。

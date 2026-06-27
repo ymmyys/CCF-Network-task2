@@ -1,10 +1,10 @@
-# System Snapshots
+# 系统快照
 
-This directory stores device state snapshots for the full real NPU experiment suite.
+本目录保存完整真实 NPU 实验前后的设备状态快照。
 
-Files:
+文件：
 
 - `npu-smi-before.txt`
 - `npu-smi-after.txt`
 
-These snapshots document Ascend device state before and after the formal run.
+这些快照用于记录正式实验前后的 Ascend 设备状态。

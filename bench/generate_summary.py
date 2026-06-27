@@ -208,8 +208,8 @@ def collect_summaries(results_dir):
     ]:
         summaries.append(make_row(
             results_dir, "exp1", scheduler, filename,
-            "real NPU balanced baseline",
-            "direct is a single-backend reference; router rows use five real backends",
+            "真实 NPU 均衡基线",
+            "direct 是单后端参考；router 行使用五个真实后端",
         ))
 
     for scheduler, filename in [
@@ -219,8 +219,8 @@ def collect_summaries(results_dir):
     ]:
         row = make_row(
             results_dir, "exp2", scheduler, filename,
-            "real hotspot pressure on qwen15b-npu3",
-            "background pressure is direct long-prompt load against NPU3",
+            "qwen15b-npu3 真实热点压力",
+            "背景压力是直接打到 NPU3 的长 prompt 请求",
             target_backend="qwen15b-npu3",
         )
         metric_tag = scheduler
@@ -242,8 +242,8 @@ def collect_summaries(results_dir):
     for window, start, end, expected in exp3_windows:
         summaries.append(make_row(
             results_dir, "exp3", "p2c_smooth_wrr", "exp3-real-capacity-p2c.csv",
-            "capacity 10->1->10 smooth migration",
-            "target backend qwen15b-npu3",
+            "capacity 10->1->10 平滑迁移",
+            "目标后端 qwen15b-npu3",
             window=window,
             start_sec=start,
             end_sec=end,
@@ -262,8 +262,8 @@ def collect_summaries(results_dir):
     for window, start, end, expected in exp4_windows:
         summaries.append(make_row(
             results_dir, "exp4", "p2c_smooth_wrr", "exp4-real-failure-p2c.csv",
-            "npu5 container stop/start fault recovery",
-            "only container yijq27-vllm-qwen15b-5 is stopped",
+            "NPU5 容器 stop/start 故障恢复",
+            "只停止 yijq27-vllm-qwen15b-5 容器",
             window=window,
             start_sec=start,
             end_sec=end,
@@ -273,19 +273,19 @@ def collect_summaries(results_dir):
 
     summaries.append(make_row(
         results_dir, "exp5", "p2c_smooth_wrr", "exp5-real-default.csv",
-        "default pool remains isolated while isolated pool is under pressure",
-        "default pool uses NPU3/4",
+        "isolated 池承压时 default 池保持隔离",
+        "default 池使用 NPU3/4",
     ))
     summaries.append(make_row(
         results_dir, "exp5", "p2c_smooth_wrr", "exp5-real-isolated.csv",
-        "isolated pool noisy-neighbor load runs on real NPU5/6/7",
-        "isolated pool uses NPU5/6/7",
+        "isolated 池 noisy-neighbor 负载运行在真实 NPU5/6/7",
+        "isolated 池使用 NPU5/6/7",
     ))
 
     summaries.append(make_row(
         results_dir, "exp6", "p2c_smooth_wrr", "exp6-real-comprehensive.csv",
-        "combined dynamic capacity, hotspot, fault, and recovery scenario",
-        "demo scenario; interpret with windowed CSV if used in report",
+        "组合动态 capacity、热点、故障和恢复的综合场景",
+        "演示场景；报告中使用时应结合分窗口 CSV 解读",
     ))
 
     for step in ["0.1", "0.25", "0.5", "1.0"]:
@@ -299,8 +299,8 @@ def collect_summaries(results_dir):
         ]:
             summaries.append(make_row(
                 results_dir, "exp7", f"smooth_step={step}", f"exp7-real-ss{step}.csv",
-                "smoothStep sensitivity on five real backends",
-                "target backend qwen15b-npu3",
+                "五个真实后端上的 smoothStep 敏感性",
+                "目标后端 qwen15b-npu3",
                 window=window,
                 start_sec=start,
                 end_sec=end,
@@ -322,9 +322,9 @@ def write_csv(path, rows):
 def write_markdown(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
-        file.write("# Real NPU Experiment Summary\n\n")
-        file.write("All rows are generated from real Ascend NPU experiment CSV files. Fake-backend fixture data is excluded.\n\n")
-        file.write("| experiment | scheduler | window | requests | errors | qps | p50 | p95 | p99 | target share | conclusion |\n")
+        file.write("# 真实 NPU 实验汇总\n\n")
+        file.write("所有行均由真实 Ascend NPU 实验 CSV 生成，不包含 fake backend 开发夹具数据。\n\n")
+        file.write("| 实验 | 调度器 | 窗口 | 请求数 | 错误数 | QPS | p50 | p95 | p99 | 目标占比 | 结论 |\n")
         file.write("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|\n")
         for row in rows:
             target_share = row["target_share_pct"] if row["target_share_pct"] != "" else "-"

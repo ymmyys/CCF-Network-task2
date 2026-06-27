@@ -1,33 +1,33 @@
-# Real NPU Result Data
+# 真实 NPU 结果数据
 
-This directory records the formal real Ascend NPU experiment data used by the project documentation.
+本目录记录项目文档引用的正式真实 Ascend NPU 实验数据。
 
-## Formal Layout
+## 正式目录结构
 
-| Directory | Experiment | Purpose |
+| 目录 | 实验 | 目的 |
 |---|---|---|
-| `formal/exp1-balanced-baseline/` | exp1 | Balanced 5-backend baseline and scheduler overhead |
-| `formal/exp2-hotspot-load/` | exp2 | Metrics-driven hotspot avoidance rerun |
-| `formal/exp3-dynamic-capacity/` | exp3 | Capacity 10->1->10 smooth migration |
-| `formal/exp4-failure-recovery/` | exp4 | Stop/start NPU5 failure recovery |
-| `formal/exp5-pool-isolation/` | exp5 | Multi-pool noisy-neighbor isolation |
-| `formal/exp6-comprehensive/` | exp6 | Combined demo scenario |
-| `formal/exp7-smoothstep/` | exp7 | smoothStep sensitivity |
-| `formal/system/` | system | `npu-smi` before/after snapshots |
-| `formal/analysis/` | summary | Combined generated summaries |
+| `formal/exp1-balanced-baseline/` | exp1 | 5 后端均衡基线和调度开销 |
+| `formal/exp2-hotspot-load/` | exp2 | 指标驱动热点避让重跑 |
+| `formal/exp3-dynamic-capacity/` | exp3 | capacity 10->1->10 平滑迁移 |
+| `formal/exp4-failure-recovery/` | exp4 | NPU5 stop/start 故障恢复 |
+| `formal/exp5-pool-isolation/` | exp5 | 多资源池 noisy-neighbor 隔离 |
+| `formal/exp6-comprehensive/` | exp6 | 综合演示剧本 |
+| `formal/exp7-smoothstep/` | exp7 | smoothStep 参数敏感性 |
+| `formal/system/` | system | `npu-smi` 前后快照 |
+| `formal/analysis/` | summary | 自动生成的综合汇总 |
 
-The old run-batch directories were intentionally removed from tracked evidence. exp2 keeps the post-fix metrics-driven rerun, not the earlier pre-metrics pressure run.
+旧的按运行批次目录已经从正式证据中移除。exp2 只保留指标修复后的正式热点压力重跑数据，不保留更早的未接入 metrics 的压力结果。
 
-## Included Files
+## 文件说明
 
-- `analysis/real_npu_summary.csv` and `.md`: generated summaries used by the reports.
-- `exp*-real-*.csv`: raw OpenAI-compatible request logs from `bench/loadgen.py`.
-- `exp*-real-*.summary.csv`: per-second latency/QPS/backend-share summaries.
-- `exp2-real-hotspot-*-metrics.csv`: vLLM `/metrics` plus router `/admin/state` samples for the formal hotspot experiment.
-- `snapshots/*.state.json` and `snapshots/*.metrics.txt`: router state and Prometheus snapshots captured during experiments.
-- `npu-smi-before.txt` and `npu-smi-after.txt`: device state snapshots for the full suite.
+- `analysis/real_npu_summary.csv` 和 `.md`：报告使用的自动汇总。
+- `exp*-real-*.csv`：`bench/loadgen.py` 生成的原始 OpenAI-compatible 请求日志。
+- `exp*-real-*.summary.csv`：按秒统计的延迟、QPS 和后端占比。
+- `exp2-real-hotspot-*-metrics.csv`：正式热点实验中的 vLLM `/metrics` 与 router `/admin/state` 采样。
+- `*.state.json` 和 `*.metrics.txt`：实验过程中采集的 router 状态和 Prometheus 快照。
+- `npu-smi-before.txt` 和 `npu-smi-after.txt`：完整实验前后的设备状态快照。
 
-## Regenerate Summaries
+## 重新生成汇总
 
 ```bash
 python3 bench/generate_summary.py \
@@ -35,4 +35,4 @@ python3 bench/generate_summary.py \
   --output-dir bench/results/formal/analysis
 ```
 
-Future ad-hoc result directories remain ignored by default. Add a new directory explicitly only when it becomes formal evidence.
+后续临时实验结果目录默认仍被忽略。只有当某个新目录成为正式证据时，才应显式加入仓库。

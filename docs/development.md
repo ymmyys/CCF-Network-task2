@@ -1,23 +1,23 @@
-# Development Guide
+# 开发指南
 
-This project is a Go HTTP router for OpenAI-compatible vLLM-Ascend backends. The current Kunlun-02 development target is the same topology used by the real NPU experiments.
+本项目是面向 OpenAI-compatible vLLM-Ascend 后端的 Go HTTP router。当前 Kunlun-02 开发目标与真实 NPU 实验使用同一套拓扑。
 
-## Current Remote Target
+## 当前远程目标
 
-| Item | Value |
+| 项目 | 值 |
 |---|---|
-| SSH host | `kunlun-02-act` |
-| Router container | `yijq27-cann851` |
-| Host workspace | `/home/yijq27/workspace/Track1_fuiglwgfnq_repos` |
-| Container workspace | `/workspace/Track1_fuiglwgfnq_repos` |
-| Model | `Qwen/Qwen2.5-1.5B-Instruct` |
-| Model directory | `/home/yijq27/workspace/models/Qwen2.5-1.5B-Instruct` |
-| vLLM image | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
-| Router data/admin ports | `8180` / `8181` |
+| SSH 主机 | `kunlun-02-act` |
+| Router 容器 | `yijq27-cann851` |
+| 主机工作区 | `/home/yijq27/workspace/Track1_fuiglwgfnq_repos` |
+| 容器工作区 | `/workspace/Track1_fuiglwgfnq_repos` |
+| 模型 | `Qwen/Qwen2.5-1.5B-Instruct` |
+| 模型目录 | `/home/yijq27/workspace/models/Qwen2.5-1.5B-Instruct` |
+| vLLM 镜像 | `quay.io/ascend/vllm-ascend:v0.18.0rc1` |
+| Router 数据/管理端口 | `8180` / `8181` |
 
-## Backend Topology
+## 后端拓扑
 
-| Backend ID | NPU | Port | Container |
+| 后端 ID | NPU | 端口 | 容器 |
 |---|---:|---:|---|
 | `qwen15b-npu3` | 3 | 9021 | `yijq27-vllm-qwen15b-3` |
 | `qwen15b-npu4` | 4 | 9022 | `yijq27-vllm-qwen15b-4` |
@@ -25,13 +25,13 @@ This project is a Go HTTP router for OpenAI-compatible vLLM-Ascend backends. The
 | `qwen15b-npu6` | 6 | 9027 | `yijq27-vllm-qwen15b-6` |
 | `qwen15b-npu7` | 7 | 9028 | `yijq27-vllm-qwen15b-7` |
 
-Each backend exposes:
+每个后端暴露：
 
-- OpenAI-compatible API on `/v1/chat/completions`;
-- health probe on `/health`;
-- Prometheus metrics on `/metrics`.
+- `/v1/chat/completions` OpenAI-compatible API；
+- `/health` 健康检查；
+- `/metrics` Prometheus 指标。
 
-## Build Router
+## 构建 Router
 
 ```bash
 ssh kunlun-02-act
@@ -41,9 +41,9 @@ docker exec yijq27-cann851 bash -lc '
 '
 ```
 
-## Start Router Manually
+## 手动启动 Router
 
-For manual debugging, run the router inside the CANN container:
+手动调试时，在 CANN 容器内运行 router：
 
 ```bash
 docker exec -it yijq27-cann851 bash
@@ -51,11 +51,11 @@ cd /workspace/Track1_fuiglwgfnq_repos
 /workspace/bin/suan-router -config config/router.qwen15b-5backends-p2c.json
 ```
 
-For experiment runs, prefer the scripts in `scripts/`; they write a PID file and only clean up the router process they started.
+正式实验优先使用 `scripts/` 下的脚本；这些脚本会写 PID 文件，并且只清理自己启动的 router 进程。
 
-## Validate
+## 验证
 
-Check backend health:
+检查后端健康：
 
 ```bash
 for p in 9021 9022 9026 9027 9028; do
@@ -64,29 +64,29 @@ for p in 9021 9022 9026 9027 9028; do
 done
 ```
 
-Check router state:
+检查 router 状态：
 
 ```bash
 curl http://127.0.0.1:8181/admin/state
 curl http://127.0.0.1:8181/metrics
 ```
 
-Send a chat request:
+发送一次聊天请求：
 
 ```bash
 curl -i http://127.0.0.1:8180/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "qwen2.5-1.5b-instruct",
-    "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+    "messages": [{"role": "user", "content": "用一句话打个招呼。"}],
     "max_tokens": 32,
     "temperature": 0
   }'
 ```
 
-The response headers include `X-Router-Backend`.
+响应头会包含 `X-Router-Backend`。
 
-## Real Experiment Entry
+## 真实实验入口
 
 ```bash
 cd /home/yijq27/workspace/Track1_fuiglwgfnq_repos
@@ -94,7 +94,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
   scripts/run_real_npu_suite.sh
 ```
 
-Single exp2 metrics-driven hotspot run:
+单独运行 exp2 指标驱动热点实验：
 
 ```bash
 RESULTS_DIR=bench/results/real-npu-metrics-exp2-$(date +%Y%m%d%H%M%S) \
@@ -103,10 +103,10 @@ EXP2_PRESSURE_CONCURRENCY=32 \
   scripts/run_experiment2_real.sh
 ```
 
-## Operational Notes
+## 运维注意事项
 
-- Keep router and vLLM processes inside containers on Kunlun-02.
-- Do not stop unrelated containers or processes.
-- Fault experiments may only stop/start `yijq27-vllm-qwen15b-5`.
-- `config/router.qwen15b-5backends-swrr.json` is the static baseline and intentionally has no `metrics_url`.
-- `config/router.qwen15b-5backends-p2c.json` and `config/router.qwen15b-5backends-balanced.json` read vLLM `/metrics` for load-aware scheduling.
+- router 和 vLLM 进程都应运行在 Kunlun-02 的容器内。
+- 不要停止无关容器或进程。
+- 故障实验只允许 stop/start `yijq27-vllm-qwen15b-5`。
+- `config/router.qwen15b-5backends-swrr.json` 是静态基线，故意不配置 `metrics_url`。
+- `config/router.qwen15b-5backends-p2c.json` 和 `config/router.qwen15b-5backends-balanced.json` 会读取 vLLM `/metrics` 实现负载感知调度。

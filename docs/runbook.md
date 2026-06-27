@@ -1,4 +1,4 @@
-# Operation Runbook
+# 操作手册
 
 本文档用于迁移和复现实验。正式实验必须在 Ascend 机器真实 NPU 上运行，主结论不使用 fake backend 数据。
 
@@ -280,7 +280,7 @@ exp2 单独重跑后的指标驱动结果目录已经整理为：
 bench/results/formal/exp2-hotspot-load/
 ```
 
-该实验的 baseline 是 `config/router.qwen15b-5backends-swrr.json`，不配置 `metrics_url`，只按静态 capacity 做 SWRR；`config/router.qwen15b-5backends-p2c.json` 和 `config/router.qwen15b-5backends-balanced.json` 配置 vLLM `/metrics`，用于验证 `num_requests_running` 等真实指标触发避热点。
+该实验的基线是 `config/router.qwen15b-5backends-swrr.json`，不配置 `metrics_url`，只按静态 capacity 做 SWRR；`config/router.qwen15b-5backends-p2c.json` 和 `config/router.qwen15b-5backends-balanced.json` 配置 vLLM `/metrics`，用于验证 `num_requests_running` 等真实指标触发避热点。
 
 ## 9. 停止与清理
 

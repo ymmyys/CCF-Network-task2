@@ -1,14 +1,14 @@
-# Optimization and Validation Notes
+# 优化与验证记录
 
 本文档记录当前版本的调度优化、真实 NPU 验证结果和后续优化方向。正式结论只引用真实 Ascend NPU 3-7 数据。
 
-## Implemented Optimizations
+## 已实现优化
 
 ### P2C 同后端高负载重采样
 
 当两次带放回采样命中同一个高负载后端时，router 会额外从其余候选中补抽一个后端，再按 `loadScore` 比较。这样保留权重语义，同时降低热点节点被重复确认的概率。
 
-### failure cooloff
+### 故障冷却
 
 配置：
 
@@ -22,7 +22,7 @@
 
 Prometheus 中的 `NaN`、`+Inf`、`-Inf` 会被忽略。权重计算和候选过滤拒绝非有限值，防止异常指标污染调度状态。
 
-### balanced P2C
+### 均衡 P2C
 
 配置：
 
@@ -40,9 +40,9 @@ Prometheus 中的 `NaN`、`+Inf`、`-Inf` 会被忽略。权重计算和候选�
 config/router.qwen15b-5backends-balanced.json
 ```
 
-balanced P2C 只对 healthy 且 schedulable 的慢后端保留受控流量；unhealthy、passive ejected、failure cooling off、drained、capacity=0、max inflight 已满的后端仍不会被调度。
+balanced P2C 只对健康且可调度的慢后端保留受控流量；不健康、被动摘除、故障冷却、drained、capacity=0、max inflight 已满的后端仍不会被调度。
 
-## Real NPU Validation
+## 真实 NPU 验证
 
 最新结果：
 
@@ -53,15 +53,15 @@ bench/results/formal/analysis/real_npu_summary.csv
 | 能力 | 结果 |
 |---|---|
 | 均衡开销 | `swrr` 247.41 QPS；`p2c_smooth_wrr` 246.46 QPS；均 0 错误 |
-| 真实热点避让 | SWRR baseline 给 NPU3 19.96%；`p2c_smooth_wrr` 在 `remote_utilization=1.0` 时降到 0.00%；`balanced_p2c` 降到 3.94% |
-| 动态降容 | NPU3 stable down 2.37%，理论 2.44%，29,748 请求 0 错误 |
-| 故障恢复 | NPU5 fail stable 0.02%，recovery end 19.80%，72,794 请求 3 错误 |
+| 真实热点避让 | SWRR 基线给 NPU3 19.96%；`p2c_smooth_wrr` 在 `remote_utilization=1.0` 时降到 0.00%；`balanced_p2c` 降到 3.94% |
+| 动态降容 | NPU3 稳定降容占比 2.37%，理论 2.44%，29,748 请求 0 错误 |
+| 故障恢复 | NPU5 故障稳定期占比 0.02%，恢复末段占比 19.80%，72,794 请求 3 错误 |
 | 资源池隔离 | default 池 28,218 请求 0 错误；isolated 池 1,592 长请求 0 错误 |
-| smoothStep | 0.25 stable down 2.31%，误差 0.13pp |
+| smoothStep | 0.25 稳定降容占比 2.31%，误差 0.13pp |
 
-## Exp2 Metrics-Driven Hotspot Validation
+## exp2 指标驱动热点验证
 
-真实 exp2 对 NPU3 发 direct long-prompt 压力，并通过 router 测量 5 后端分布。SWRR baseline 不配置 `metrics_url`，只按静态 capacity 轮询；P2C 组配置 vLLM `/metrics`，router 解析 `vllm:num_requests_running`、`vllm:num_requests_waiting`、`vllm:gpu_cache_usage_perc`。
+真实 exp2 对 NPU3 发 direct 长 prompt 压力，并通过 router 测量 5 后端分布。SWRR 基线不配置 `metrics_url`，只按静态 capacity 轮询；P2C 组配置 vLLM `/metrics`，router 解析 `vllm:num_requests_running`、`vllm:num_requests_waiting`、`vllm:gpu_cache_usage_perc`。
 
 重跑结果目录：
 
@@ -71,13 +71,13 @@ bench/results/formal/exp2-hotspot-load/
 
 | 调度器 | NPU3 占比 | p95 | p99 | NPU3 max running | router max remote_utilization |
 |---|---:|---:|---:|---:|---:|
-| swrr baseline | 19.96% | 154.65ms | 178.44ms | 38 | 0.0 |
+| swrr 基线 | 19.96% | 154.65ms | 178.44ms | 38 | 0.0 |
 | p2c_smooth_wrr | 0.00% | 148.74ms | 158.73ms | 32 | 1.0 |
 | balanced_p2c | 3.94% | 149.97ms | 157.72ms | 35 | 1.0 |
 
-结论：在 NPU3 真实 external pressure 被 vLLM `/metrics` 观测到后，动态调度会主动降低热点节点被选中概率。`p2c_smooth_wrr` 追求尾延迟和热点规避，把 NPU3 测量流量降到 0；`balanced_p2c` 保留少量探测流量，便于热点消退后恢复判断。
+结论：在 NPU3 真实外部压力被 vLLM `/metrics` 观测到后，动态调度会主动降低热点节点被选中概率。`p2c_smooth_wrr` 追求尾延迟和热点规避，把 NPU3 测量流量降到 0；`balanced_p2c` 保留少量探测流量，便于热点消退后恢复判断。
 
-## Development Fixtures
+## 开发夹具
 
 以下内容仅用于开发验证，不进入正式主结论：
 
@@ -90,7 +90,7 @@ config/router.qwen15b-heterogeneous-*.json
 
 fake backend 对确定性复现很有价值，例如构造 300ms 延迟、固定 queue depth、非法指标值等；但赛题提交材料中的性能结论必须来自真实 NPU。
 
-## Remaining Work
+## 后续工作
 
 | 项目 | 状态 | 说明 |
 |---|---|---|

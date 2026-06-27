@@ -1,4 +1,4 @@
-# Experiment Scripts
+# 实验脚本
 
 本目录分为两类脚本：
 
@@ -27,7 +27,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | exp6 综合剧本 | `run_experiment6.sh` | `exp6-real-comprehensive.csv` |
 | exp7 smoothStep | `run_smoothstep_experiment.sh` | `exp7-real-ss*.csv` |
 
-所有正式脚本都会 source `scripts/lib_real_npu.sh`：
+所有正式脚本都会加载 `scripts/lib_real_npu.sh`：
 
 - 启动 router 时写入 `/tmp/suan-router-real-experiment.pid`；
 - 清理时只停止 PID 文件记录且命令行为 `/workspace/bin/suan-router` 的进程；
@@ -83,7 +83,7 @@ router_queue_depth
 router_kv_cache_usage
 ```
 
-SWRR 配置故意不配置 `metrics_url`，作为静态 baseline；P2C 和 balanced P2C 配置 vLLM `/metrics`，用于验证实时负载感知。
+SWRR 配置故意不配置 `metrics_url`，作为静态基线；P2C 和 balanced P2C 配置 vLLM `/metrics`，用于验证实时负载感知。
 
 ## 开发夹具
 

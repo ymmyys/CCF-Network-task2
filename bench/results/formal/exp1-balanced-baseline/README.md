@@ -1,13 +1,13 @@
-# exp1 Balanced Baseline
+# exp1 均衡基线
 
-Purpose: compare direct-to-one-backend, static SWRR, `p2c_smooth_wrr`, and `balanced_p2c` on five healthy real Ascend NPU backends.
+目的：在 5 个健康的真实 Ascend NPU 后端上，对比单后端直连、静态 SWRR、`p2c_smooth_wrr` 和 `balanced_p2c`。
 
-Key files:
+关键文件：
 
 - `exp1-real-direct-npu3.csv`
 - `exp1-real-swrr.csv`
 - `exp1-real-p2c.csv`
 - `exp1-real-balanced.csv`
-- `exp1-*.state.json` and `exp1-*.metrics.txt`
+- `exp1-*.state.json` 和 `exp1-*.metrics.txt`
 
-Formal result: `swrr` reached 247.41 QPS and `p2c_smooth_wrr` reached 246.46 QPS, both with 0 errors. This supports low scheduling overhead in the balanced case.
+正式结果：`swrr` 达到 247.41 QPS，`p2c_smooth_wrr` 达到 246.46 QPS，二者均 0 错误。该结果说明均衡场景下动态调度开销很低。

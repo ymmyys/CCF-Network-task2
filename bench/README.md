@@ -1,10 +1,10 @@
-# bench
+# bench 实验工具
 
-This directory contains the load generator, metrics collector, plotting helpers, and summary generator used by the router experiments.
+本目录包含 router 实验使用的负载发生器、指标采集器、绘图辅助工具和结果汇总脚本。
 
-## Formal Real-NPU Flow
+## 正式真实 NPU 流程
 
-Run experiments from the remote host workspace:
+在远程主机工作区运行实验：
 
 ```bash
 cd /home/yijq27/workspace/Track1_fuiglwgfnq_repos
@@ -12,7 +12,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
   scripts/run_real_npu_suite.sh
 ```
 
-Generate summaries:
+生成汇总：
 
 ```bash
 python3 bench/generate_summary.py \
@@ -20,29 +20,29 @@ python3 bench/generate_summary.py \
   --output-dir bench/results/formal/analysis
 ```
 
-The recorded formal results are grouped by experiment in:
+已入库的正式结果按实验编号整理在：
 
 ```text
 bench/results/formal/
 ```
 
-## Important Scripts
+## 关键脚本
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| `loadgen.py` | OpenAI-compatible load generator |
-| `collect_metrics.py` | vLLM `/metrics` plus router `/admin/state` sampler |
-| `generate_summary.py` | real NPU CSV summary and window statistics |
-| `plot_results.py` | optional latency/QPS plots |
-| `inject_capacity.py` | admin API capacity event injector |
-| `fake_backend.py` | development fixture only, not formal evidence |
+| `loadgen.py` | OpenAI-compatible 负载发生器 |
+| `collect_metrics.py` | vLLM `/metrics` 与 router `/admin/state` 采样器 |
+| `generate_summary.py` | 真实 NPU CSV 汇总和窗口统计 |
+| `plot_results.py` | 可选的延迟/QPS 绘图脚本 |
+| `inject_capacity.py` | 管理 API capacity 事件注入脚本 |
+| `fake_backend.py` | 仅用于开发夹具，不作为正式证据 |
 
-## Baseline Definition
+## 基线定义
 
-For formal comparisons:
+正式对比中：
 
-- baseline: `scheduler.mode=swrr` with `config/router.qwen15b-5backends-swrr.json`, intentionally without `metrics_url`;
-- improved: `scheduler.mode=p2c_smooth_wrr` with vLLM `/metrics`;
-- balanced improved: `p2c_smooth_wrr` plus `balanced_p2c=true`, also with vLLM `/metrics`.
+- 基线：`scheduler.mode=swrr`，使用 `config/router.qwen15b-5backends-swrr.json`，故意不配置 `metrics_url`；
+- 改进组：`scheduler.mode=p2c_smooth_wrr`，配置 vLLM `/metrics`；
+- 均衡改进组：`p2c_smooth_wrr` 加 `balanced_p2c=true`，同样配置 vLLM `/metrics`。
 
-Fake backends are useful for local deterministic tests, but formal report conclusions only use real Ascend NPU 3-7 data.
+fake backend 仅用于本地确定性测试；正式报告结论只使用真实 Ascend NPU 3-7 数据。

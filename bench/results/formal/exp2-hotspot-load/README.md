@@ -1,16 +1,16 @@
-# exp2 Hotspot Load
+# exp2 热点负载
 
-Purpose: validate real-time load-aware scheduling under external pressure on `qwen15b-npu3`.
+目的：在 `qwen15b-npu3` 承受外部压力时，验证实时负载感知调度是否能避让热点。
 
-This directory uses the metrics-driven rerun after vLLM Prometheus parsing was fixed. The static SWRR baseline intentionally does not use `metrics_url`; `p2c_smooth_wrr` and `balanced_p2c` use vLLM `/metrics`.
+本目录使用修复 vLLM Prometheus 解析后的指标驱动重跑结果。静态 SWRR 基线故意不配置 `metrics_url`；`p2c_smooth_wrr` 和 `balanced_p2c` 使用 vLLM `/metrics`。
 
-Key files:
+关键文件：
 
 - `exp2-real-hotspot-swrr.csv`
 - `exp2-real-hotspot-p2c.csv`
 - `exp2-real-hotspot-balanced.csv`
 - `exp2-real-hotspot-*-metrics.csv`
 - `exp2-real-pressure-*.csv`
-- `exp2-*.state.json` and `exp2-*.metrics.txt`
+- `exp2-*.state.json` 和 `exp2-*.metrics.txt`
 
-Formal result: SWRR sent 19.96% of measured traffic to NPU3, while `p2c_smooth_wrr` reduced NPU3 measured traffic to 0.00% after observing `remote_utilization=1.0`; `balanced_p2c` kept a 3.94% probe share.
+正式结果：SWRR 将 19.96% 的测量流量发送到 NPU3；`p2c_smooth_wrr` 观测到 `remote_utilization=1.0` 后，将 NPU3 测量流量降到 0.00%；`balanced_p2c` 保留 3.94% 探测流量。

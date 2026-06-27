@@ -1,11 +1,11 @@
-# exp5 Pool Isolation
+# exp5 资源池隔离
 
-Purpose: validate resource-pool isolation under noisy-neighbor pressure.
+目的：验证 noisy-neighbor 压力下的资源池隔离能力。
 
-Key files:
+关键文件：
 
 - `exp5-real-default.csv`
 - `exp5-real-isolated.csv`
-- `exp5-*.state.json` and `exp5-*.metrics.txt`
+- `exp5-*.state.json` 和 `exp5-*.metrics.txt`
 
-Formal result: the default pool served 28,218 requests with 0 errors while the isolated pool ran long requests on real NPU5/6/7. This supports pool isolation under concurrent load.
+正式结果：isolated 池在真实 NPU5/6/7 上运行长请求压力时，default 池完成 28,218 请求且 0 错误。该结果支撑并发负载下的资源池隔离。
