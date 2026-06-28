@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 SUMMARY_CSV = ROOT / "bench/results/formal/analysis/real_npu_summary.csv"
-DEMO_DIR = ROOT / "docs/demo"
+DEMO_DIR = ROOT / "docs/demo/work"
 HTML_OUT = DEMO_DIR / "prototype-demo.html"
 VIDEO_OUT = DEMO_DIR / "prototype-demo-draft.mp4"
 

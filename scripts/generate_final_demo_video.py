@@ -27,9 +27,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 SUMMARY_CSV = ROOT / "bench/results/formal/analysis/real_npu_summary.csv"
-DEMO_DIR = ROOT / "docs/demo"
+DEMO_DIR = ROOT / "docs/demo/submission"
 FINAL_VIDEO = DEMO_DIR / "prototype-demo-final.mp4"
-FINAL_VIDEO_SILENT = DEMO_DIR / "prototype-demo-final-silent.mp4"
 NARRATION_TEXT = DEMO_DIR / "prototype-demo-final-narration.txt"
 SRT_OUT = DEMO_DIR / "prototype-demo-final.srt"
 COVER_OUT = DEMO_DIR / "prototype-demo-final-cover.png"
@@ -452,7 +451,7 @@ def draw_submission(draw: ImageDraw.ImageDraw, p: float, d: dict[str, str]) -> N
     items = [
         ("设计方案", "docs/final-report.md", COLORS["cyan"]),
         ("技术路线图", "docs/experiments.md + docs/optimization-and-validation.md", COLORS["green"]),
-        ("原型视频", "docs/demo/prototype-demo-final.mp4", COLORS["amber"]),
+        ("原型视频", "docs/demo/submission/prototype-demo-final.mp4", COLORS["amber"]),
         ("真实数据", "bench/results/formal/", COLORS["red"]),
     ]
     for i, (name, path, color) in enumerate(items):
@@ -680,7 +679,6 @@ def main() -> None:
         audio, durations = generate_audio(scene_list, tmp)
         silent = tmp / "silent.mp4"
         render_video(scene_list, durations, data, silent)
-        shutil.copyfile(silent, FINAL_VIDEO_SILENT)
         write_srt(scene_list, durations)
         if audio is not None:
             mux_audio(silent, audio, FINAL_VIDEO)
@@ -688,7 +686,6 @@ def main() -> None:
             shutil.copyfile(silent, FINAL_VIDEO)
     total = sum(durations)
     print(f"wrote {FINAL_VIDEO.relative_to(ROOT)} ({total:.1f}s)")
-    print(f"wrote {FINAL_VIDEO_SILENT.relative_to(ROOT)}")
     print(f"wrote {SRT_OUT.relative_to(ROOT)}")
     print(f"wrote {NARRATION_TEXT.relative_to(ROOT)}")
     print(f"wrote {COVER_OUT.relative_to(ROOT)}")
