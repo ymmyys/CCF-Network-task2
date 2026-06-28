@@ -62,7 +62,7 @@ docker exec yijq27-cann851 bash -lc '
 - 原型展示材料：[`docs/demo/submission/`](docs/demo/submission/)
 - 原型视频：[`docs/demo/submission/prototype-demo-final.mp4`](docs/demo/submission/prototype-demo-final.mp4)
 - 浅色讲解 PPT：[`docs/demo/submission/suan-router-preliminary-demo-deck.pptx`](docs/demo/submission/suan-router-preliminary-demo-deck.pptx)
-- 逐页讲稿：[`docs/demo/submission/slide-speaker-notes.md`](docs/demo/submission/slide-speaker-notes.md)
+- 逐页阐述文档：[`docs/demo/submission/slide-speaker-notes.md`](docs/demo/submission/slide-speaker-notes.md)
 
 ## 真实 NPU 实验
 

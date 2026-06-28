@@ -5,7 +5,7 @@
 | 文件 | 用途 |
 |---|---|
 | `suan-router-preliminary-demo-deck.pptx` | 浅色可编辑 PPT，适合现场讲解或重新录屏 |
-| `slide-speaker-notes.md` | PPT 每页逐页讲稿 |
+| `slide-speaker-notes.md` | PPT 每页讲解思路、项目理解、重制建议和逐页讲稿 |
 | `prototype-demo-final.mp4` | 已生成的 5 分钟以内有声原型展示视频 |
 | `prototype-demo-final.srt` | 视频字幕 |
 | `prototype-demo-final-narration.txt` | 视频旁白文本 |
@@ -15,7 +15,7 @@
 
 1. 代码仓库提交：保留 README、`docs/`、`bench/results/formal/` 和本目录。
 2. 视频上传：将 `prototype-demo-final.mp4` 上传到项目数据集。
-3. 现场讲解：使用 `suan-router-preliminary-demo-deck.pptx`，按 `slide-speaker-notes.md` 控制在 5 分钟以内。
+3. 现场讲解或重制 PPT：使用 `suan-router-preliminary-demo-deck.pptx`，按 `slide-speaker-notes.md` 理解每页叙事目标并控制在 5 分钟以内。
 
 材料安全边界：
 
