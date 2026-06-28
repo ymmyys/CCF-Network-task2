@@ -100,6 +100,26 @@ SWRR 配置故意不配置 `metrics_url`，作为静态基线；P2C 和 balanced
 
 exp8 使用 `config/router.qwen7b-5backends-*.json`，验证同一热点避让逻辑在 Qwen2.5-7B-Instruct 上是否仍成立。
 
+## 原型录屏脚本
+
+`recordremote.sh` 用于在 VS Code 已连接远程容器时录制原型展示。它只读取当前容器环境和已入库实验结果，不会启动负载压测，也不会停止或重启任何容器。
+
+推荐在远程容器终端中执行：
+
+```bash
+bash /tmp/recordremote.sh
+```
+
+脚本展示内容：
+
+- 当前容器、主机名和 Ubuntu 版本；
+- `npu-smi info` 与 `/workspace/models`；
+- `cmd`、`internal`、`config` 代码入口和调度关键实现位置；
+- `bench/results/formal` 正式实验目录和真实 NPU 汇总；
+- shell/Python 脚本静态检查；
+- 从正式结果重新生成汇总；
+- exp2 vLLM 指标进入 router 状态后的 `remote_utilization` 与动态权重证据。
+
 ## 开发夹具
 
 以下脚本/文件保留用于本地开发，不作为正式赛题主证据：

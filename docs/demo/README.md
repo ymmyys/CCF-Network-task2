@@ -9,7 +9,9 @@
 | `submission/README.md` | 最终演示材料索引 |
 | `submission/suan-router-preliminary-demo-deck.pptx` | 辅助用浅色可编辑 PPT，适合现场答辩补充，不作为视频主体 |
 | `submission/slide-speaker-notes.md` | 辅助 PPT 每页讲解思路、项目理解、重制建议和逐页讲稿 |
-| `submission/prototype-demo-final.mp4` | 推荐提交的 5 分钟以内证据型原型展示视频 |
+| `submission/prototype-remote-container-recording-subtitled.mp4` | 推荐提交的远程容器真实运行录屏 |
+| `submission/prototype-remote-container-recording.srt` | 远程容器录屏字幕 |
+| `submission/prototype-demo-final.mp4` | 备用的 5 分钟以内证据型合成展示视频 |
 | `submission/prototype-evidence-video-guide.md` | 证据型视频镜头说明和数据源索引 |
 | `submission/prototype-demo-final.srt` | 字幕文件 |
 | `submission/prototype-demo-final-narration.txt` | 最终版旁白文本 |
@@ -34,6 +36,6 @@ python3 scripts/generate_final_demo_video.py
 
 ## 推荐上传文件
 
-将 `submission/prototype-demo-final.mp4` 上传至项目数据集。该文件为 1920x1080 H.264/AAC，有中文旁白，时长约 3 分 46 秒；画面直接展示真实终端输出、NPU 状态、router `/admin/state`、`/metrics` 和实验对比图。仓库 README 和 `docs/` 中保留设计方案、技术路线图、操作手册和实验数据。
+将 `submission/prototype-remote-container-recording-subtitled.mp4` 上传至项目数据集。该文件为远程 VS Code 容器录屏，含中文字幕，直接展示真实容器、NPU 状态、模型目录、代码入口、正式实验结果、脚本检查和 vLLM 指标证据。
 
-如需重新录制原型视频，优先按 `submission/prototype-evidence-video-guide.md` 的镜头顺序展示真实运行证据：终端文件、NPU 状态、router `/admin/state`、`/metrics` 和实验图表。`submission/suan-router-preliminary-demo-deck.pptx` 只作为现场答辩或重新制图的辅助材料；所有关键数值来自 `bench/results/formal/analysis/real_npu_summary.csv`。
+备用文件 `submission/prototype-demo-final.mp4` 是生成式证据视频，时长约 3 分 46 秒，适合无法使用远程容器录屏时提交。`submission/suan-router-preliminary-demo-deck.pptx` 只作为现场答辩或重新制图的辅助材料；所有关键数值来自 `bench/results/formal/analysis/real_npu_summary.csv`。
