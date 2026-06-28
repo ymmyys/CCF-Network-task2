@@ -61,6 +61,7 @@ docker exec yijq27-cann851 bash -lc '
 - 技术路线图：[`docs/experiments.md`](docs/experiments.md)、[`docs/optimization-and-validation.md`](docs/optimization-and-validation.md)
 - 原型展示材料：[`docs/demo/submission/`](docs/demo/submission/)
 - 原型视频：[`docs/demo/submission/prototype-demo-final.mp4`](docs/demo/submission/prototype-demo-final.mp4)
+- 视频证据说明：[`docs/demo/submission/prototype-evidence-video-guide.md`](docs/demo/submission/prototype-evidence-video-guide.md)
 - 浅色讲解 PPT：[`docs/demo/submission/suan-router-preliminary-demo-deck.pptx`](docs/demo/submission/suan-router-preliminary-demo-deck.pptx)
 - 逐页阐述文档：[`docs/demo/submission/slide-speaker-notes.md`](docs/demo/submission/slide-speaker-notes.md)
 
