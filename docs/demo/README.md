@@ -9,7 +9,12 @@
 | `video-script.md` | 中文讲稿、分镜和时间轴 |
 | `recording-checklist.md` | 录屏前检查项、推荐窗口和导出要求 |
 | `prototype-demo.html` | 可直接打开录屏的本地演示页 |
-| `prototype-demo-draft.mp4` | 自动生成的无声字幕版草稿视频 |
+| `prototype-demo-final.mp4` | 推荐提交的 5 分钟以内有声原型展示视频 |
+| `prototype-demo-final-silent.mp4` | 无声版本，便于自行配音 |
+| `prototype-demo-final.srt` | 字幕文件 |
+| `prototype-demo-final-narration.txt` | 最终版旁白文本 |
+| `prototype-demo-final-cover.png` | 视频封面 |
+| `prototype-demo-draft.mp4` | 早期无声字幕草稿，仅作备份 |
 
 ## 推荐成片结构
 
@@ -24,6 +29,11 @@
 
 ```bash
 python3 scripts/generate_demo_assets.py
+python3 scripts/generate_final_demo_video.py
 ```
 
 生成过程只读取 `bench/results/formal/analysis/real_npu_summary.csv`，不会连接远程机器，也不会占用 NPU。
+
+## 推荐上传文件
+
+将 `prototype-demo-final.mp4` 上传至项目数据集。该文件为 1920x1080 H.264/AAC，有中文旁白，时长约 3 分 56 秒。仓库 README 和 `docs/` 中保留设计方案、技术路线图、操作手册和实验数据。

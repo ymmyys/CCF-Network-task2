@@ -1,6 +1,6 @@
 # 原型展示视频讲稿
 
-目标时长：4 分 30 秒到 5 分钟。建议屏幕录制 `docs/demo/prototype-demo.html`，同时按下面讲稿配音。视频中不需要展示密码、远程登录信息或长时间实验过程。
+目标时长：4 分 30 秒到 5 分钟。最终自动成片使用 `docs/demo/prototype-demo-final-narration.txt` 作为旁白文本，并已生成 `docs/demo/prototype-demo-final.mp4`。如果需要真人配音或重新录屏，可以屏幕录制 `docs/demo/prototype-demo.html`，并按下面讲稿配音。视频中不需要展示密码、远程登录信息或长时间实验过程。
 
 ## 0:00-0:25 开场
 
