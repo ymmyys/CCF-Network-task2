@@ -53,6 +53,15 @@ docker exec yijq27-cann851 bash -lc '
 
 完整操作手册见 [`docs/runbook.md`](docs/runbook.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
+## 初赛材料
+
+代码仓库提交时，文字材料已放在 README 与 `docs/` 中；原型展示材料放在 `docs/demo/`：
+
+- 设计方案：[`docs/final-report.md`](docs/final-report.md)
+- 技术路线图：[`docs/experiments.md`](docs/experiments.md)、[`docs/optimization-and-validation.md`](docs/optimization-and-validation.md)
+- 原型视频：[`docs/demo/prototype-demo-final.mp4`](docs/demo/prototype-demo-final.mp4)
+- 浅色讲解 PPT：[`docs/demo/suan-router-preliminary-demo-deck.pptx`](docs/demo/suan-router-preliminary-demo-deck.pptx)
+
 ## 真实 NPU 实验
 
 最新正式实验只使用真实 Ascend NPU 3-7，不把 fake backend 数据写入主结论。实验数据已按实验编号整理：
