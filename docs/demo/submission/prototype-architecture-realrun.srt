@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:07,000
+架构：OpenAI 客户端进入 suan-router，再分发到 NPU 3-7 上的 5 个 vLLM-Ascend 后端。
+
+2
+00:00:07,000 --> 00:00:17,000
+关键实现：router、scheduler、backend 状态机、metrics_url 和 smooth effective weight 都在仓库代码中。
+
+3
+00:00:17,000 --> 00:00:26,000
+真实环境：逐个检查 5 个后端 /health，并展示 npu-smi，确认不是 fake backend。
+
+4
+00:00:26,000 --> 00:00:32,000
+启动前构建当前 router，并生成临时配置；数据面 18180，管理面和 metrics 18181。
+
+5
+00:00:32,000 --> 00:00:49,000
+真实实验：loadgen 通过 router 发起 OpenAI-compatible chat/completions 请求，由调度器动态选择真实后端。
+
+6
+00:00:49,000 --> 00:00:58,000
+结果汇总：统计请求数、错误数、p50/p95/p99 延迟，并展示各 NPU 后端的实际请求分布。
+
+7
+00:00:58,000 --> 00:01:08,000
+指标证据：/admin/state 和 /metrics 记录 remote_utilization、effective_weight、inflight、KV cache 等调度信号。
+
+8
+00:01:08,000 --> 00:01:15,000
+安全清理：脚本只停止自己启动的 router，vLLM 后端由外层流程统一停止释放 NPU。

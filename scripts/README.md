@@ -102,23 +102,45 @@ exp8 使用 `config/router.qwen7b-5backends-*.json`，验证同一热点避让�
 
 ## 原型录屏脚本
 
-`recordremote.sh` 用于在 VS Code 已连接远程容器时录制原型展示。它只读取当前容器环境和已入库实验结果，不会启动负载压测，也不会停止或重启任何容器。
+`recordrealrun.sh` 用于在 VS Code 已连接远程 Ascend CANN 容器时录制原型展示。它会真实构建并启动一个临时 router，再通过 router 发起 OpenAI-compatible 推理请求，因此可以直接展示项目架构、运行过程和指标证据。
 
 推荐在远程容器终端中执行：
 
 ```bash
-bash /tmp/recordremote.sh
+cd /workspace/Track1_fuiglwgfnq_repos
+bash scripts/recordrealrun.sh
 ```
 
 脚本展示内容：
 
-- 当前容器、主机名和 Ubuntu 版本；
-- `npu-smi info` 与 `/workspace/models`；
-- `cmd`、`internal`、`config` 代码入口和调度关键实现位置；
-- `bench/results/formal` 正式实验目录和真实 NPU 汇总；
-- shell/Python 脚本静态检查；
-- 从正式结果重新生成汇总；
-- exp2 vLLM 指标进入 router 状态后的 `remote_utilization` 与动态权重证据。
+- suan-router 架构：client -> router -> NPU 3-7 上的 5 个 vLLM-Ascend 后端；
+- `cmd`、`internal/router`、`config` 代码入口和调度关键实现位置；
+- 5 个真实后端 `/health` 与 `npu-smi info`；
+- `go build` 当前 router，并生成临时 `18180/18181` 配置；
+- 通过 `bench/loadgen.py` 发起真实推理请求；
+- 请求数、错误数、p50/p95/p99、后端分布、`/admin/state` 与 `/metrics`；
+- 退出时只清理自己启动的 router，不停止 vLLM 后端容器。
+
+录制前需要确认这些后端容器已启动并健康：
+
+```text
+yijq27-vllm-qwen15b-3 -> 9021
+yijq27-vllm-qwen15b-4 -> 9022
+yijq27-vllm-qwen15b-5 -> 9026
+yijq27-vllm-qwen15b-6 -> 9027
+yijq27-vllm-qwen15b-7 -> 9028
+```
+
+录制结束后，外层流程应停止这些后端容器释放 NPU：
+
+```bash
+docker stop \
+  yijq27-vllm-qwen15b-3 \
+  yijq27-vllm-qwen15b-4 \
+  yijq27-vllm-qwen15b-5 \
+  yijq27-vllm-qwen15b-6 \
+  yijq27-vllm-qwen15b-7
+```
 
 ## 开发夹具
 

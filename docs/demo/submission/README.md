@@ -1,27 +1,27 @@
 # 初赛原型展示提交材料
 
-本目录集中保存原型展示相关的最终材料。评审或迁移时优先查看本目录，不需要再到 `docs/demo/` 上层寻找零散文件。
+本目录只保留最终提交所需的真实运行演示材料。
 
 | 文件 | 用途 |
 |---|---|
-| `suan-router-preliminary-demo-deck.pptx` | 辅助用浅色可编辑 PPT，适合现场答辩补充，不作为视频主体 |
-| `slide-speaker-notes.md` | 辅助 PPT 每页讲解思路、项目理解、重制建议和逐页讲稿 |
-| `prototype-remote-container-recording-subtitled.mp4` | 推荐提交的远程容器真实运行录屏，含中文字幕 |
-| `prototype-remote-container-recording.srt` | 远程容器录屏字幕文件 |
-| `prototype-demo-final.mp4` | 备用的 5 分钟以内证据型合成展示视频 |
-| `prototype-evidence-video-guide.md` | 证据型视频镜头说明和数据源索引 |
-| `prototype-demo-final.srt` | 备用视频字幕 |
-| `prototype-demo-final-narration.txt` | 备用视频旁白文本 |
-| `prototype-demo-final-cover.png` | 视频封面 |
+| `prototype-architecture-realrun-subtitled.mp4` | 推荐上传到项目数据集的原型展示视频，75 秒，含中文字幕 |
+| `prototype-architecture-realrun.srt` | 字幕源文件，便于重新压制或修改旁白 |
 
-建议正式提交：
+## 视频主线
 
-1. 代码仓库提交：保留 README、`docs/`、`bench/results/formal/` 和本目录。
-2. 视频上传：优先将 `prototype-remote-container-recording-subtitled.mp4` 上传到项目数据集；该视频直接展示 VS Code 连接远程 Ascend 容器、`npu-smi`、模型目录、代码入口、正式实验结果、脚本检查和 vLLM 指标证据。
-3. 现场答辩补充：如需要 PPT，再使用 `suan-router-preliminary-demo-deck.pptx` 和 `slide-speaker-notes.md`；原型视频本身应按 `prototype-evidence-video-guide.md` 展示真实运行证据。
+这版视频不是 PPT，也不是离线合成图表，而是在远程 VS Code 已连接 Ascend CANN 容器的状态下录制真实命令执行过程：
 
-材料安全边界：
+1. 项目架构：客户端请求进入 suan-router，再分发到 5 个真实 vLLM-Ascend 后端。
+2. 代码证据：展示 router 入口、调度器、后端状态机、`metrics_url`、负载分数与平滑权重更新的位置。
+3. 硬件证据：检查 9021/9022/9026/9027/9028 的 `/health`，并展示 `npu-smi info`。
+4. 运行证据：容器内 `go build` 当前 router，启动临时数据面和管理面。
+5. 真实请求：`bench/loadgen.py` 通过 router 发起 OpenAI-compatible 推理请求。
+6. 指标证据：输出请求数、错误数、延迟分位数、后端分布、`/admin/state` 与 `/metrics`。
+7. 清理边界：脚本只停止自己启动的 router；vLLM 后端容器由外层流程停止释放 NPU。
 
-- 不包含密码、令牌或远程登录凭据。
-- 不展示无关容器或其他用户任务。
-- 视频和 PPT 的关键数值来自 `bench/results/formal/analysis/real_npu_summary.csv`。
+## 安全边界
+
+- 视频不包含密码、令牌或远程登录凭据。
+- 视频不展示无关容器和其他用户任务。
+- 录制脚本使用临时端口 `18180/18181`，不会占用正式实验端口。
+- 录制脚本不使用宽泛 `pkill`，只清理自己写入 PID 文件的 router。
