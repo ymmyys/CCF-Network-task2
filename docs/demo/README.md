@@ -14,7 +14,7 @@
 
 `prototype-architecture-realrun-subtitled.mp4` 直接录制远程 VS Code 连接到 Ascend CANN 容器后的真实运行过程：
 
-1. 展示 suan-router 项目架构：OpenAI-compatible client -> router -> NPU 3-7 vLLM-Ascend 后端。
+1. 展示 MUTT 项目架构：OpenAI-compatible client -> router -> NPU 3-7 vLLM-Ascend 后端。
 2. 展示关键代码位置：`cmd`、`internal/router`、`config`、负载分数、P2C、smooth effective weight 和 `metrics_url`。
 3. 检查真实环境：后端 `/health` 与 `npu-smi info`。
 4. 在容器内构建并启动临时 router。

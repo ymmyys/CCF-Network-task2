@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR=${ROOT_DIR:-/workspace/Track1_fuiglwgfnq_repos}
-BEFORE_BIN=${BEFORE_BIN:-/tmp/suan-router-before}
-AFTER_BIN=${AFTER_BIN:-/tmp/suan-router-after}
-RESULT_DIR=${RESULT_DIR:-/tmp/suan-router-microbench}
+BEFORE_BIN=${BEFORE_BIN:-/tmp/mutt-before}
+AFTER_BIN=${AFTER_BIN:-/tmp/mutt-after}
+RESULT_DIR=${RESULT_DIR:-/tmp/mutt-microbench}
 
 DATA_PORT=${DATA_PORT:-18180}
 ADMIN_PORT=${ADMIN_PORT:-18181}

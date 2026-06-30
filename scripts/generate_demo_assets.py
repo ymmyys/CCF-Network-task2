@@ -100,7 +100,7 @@ def build_html(data: dict[str, str]) -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>suan-router 原型展示</title>
+  <title>MUTT 原型展示</title>
   <style>
     :root {{
       --bg: #f7f8fb;
@@ -172,7 +172,7 @@ def build_html(data: dict[str, str]) -> str:
     <section class="slide active">
       <header>
         <div class="eyebrow">赛题2：大模型推理算力资源动态负载感知调度</div>
-        <h1>suan-router<br>昇腾 NPU 推理集群动态调度原型</h1>
+        <h1>MUTT<br>多信号闭环动态权重调度方案</h1>
       </header>
       <div class="grid">
         <div class="panel">
@@ -200,7 +200,7 @@ def build_html(data: dict[str, str]) -> str:
       <div class="panel">
         <div class="arch">
           <div class="node">OpenAI 客户端<br><span style="font-weight:500;color:var(--muted)">/v1/chat/completions</span></div>
-          <div class="node router">suan-router<br><span style="font-weight:500;color:var(--muted)">8180 data / 8181 admin / metrics</span></div>
+          <div class="node router">MUTT<br><span style="font-weight:500;color:var(--muted)">8180 data / 8181 admin / metrics</span></div>
           <div class="backends">
             <div class="backend"><span>NPU3</span><span>vLLM</span></div>
             <div class="backend"><span>NPU4</span><span>vLLM</span></div>
@@ -415,7 +415,7 @@ def draw_text_block(
 def slide_frames(data: dict[str, str]) -> list[dict[str, object]]:
     return [
         {
-            "title": "suan-router 昇腾 NPU 动态调度原型",
+            "title": "MUTT：面向昇腾 NPU 推理集群的多信号闭环动态权重调度方案",
             "subtitle": "赛题2：大模型推理算力资源动态负载感知调度",
             "bullets": ["真实 Ascend NPU 3-7", "OpenAI-compatible router", "健康、负载、capacity、资源池统一调度"],
             "duration": 18,
@@ -483,7 +483,7 @@ def draw_slide(slide: dict[str, object], index: int, total: int) -> Image.Image:
     for item in slide["bullets"]:  # type: ignore[index]
         draw.ellipse((130, bullet_y + 12, 148, bullet_y + 30), fill="#0f8b6f")
         bullet_y = draw_text_block(draw, (172, bullet_y), str(item), bullet_font, "#101217", 1210, 8) + 22
-    draw.text((90, 824), "suan-router / Ascend NPU 3-7 / vLLM-Ascend", font=small_font, fill="#5b6472")
+    draw.text((90, 824), "MUTT / Ascend NPU 3-7 / vLLM-Ascend", font=small_font, fill="#5b6472")
     draw.text((1410, 824), f"{index + 1} / {total}", font=small_font, fill="#5b6472")
     return image
 

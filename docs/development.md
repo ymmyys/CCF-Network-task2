@@ -51,7 +51,7 @@ exp8 泛化实验会临时使用 7B 后端：
 ssh kunlun-02-act
 docker exec yijq27-cann851 bash -lc '
   cd /workspace/Track1_fuiglwgfnq_repos &&
-  go build -o /workspace/bin/suan-router ./cmd/router
+  go build -o /workspace/bin/mutt ./cmd/router
 '
 ```
 
@@ -62,7 +62,7 @@ docker exec yijq27-cann851 bash -lc '
 ```bash
 docker exec -it yijq27-cann851 bash
 cd /workspace/Track1_fuiglwgfnq_repos
-/workspace/bin/suan-router -config config/router.qwen15b-5backends-p2c.json
+/workspace/bin/mutt -config config/router.qwen15b-5backends-p2c.json
 ```
 
 正式实验优先使用 `scripts/` 下的脚本；这些脚本会写 PID 文件，并且只清理自己启动的 router 进程。

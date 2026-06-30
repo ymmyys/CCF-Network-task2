@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">MUTT architecture diagram</title>
+  <desc id="desc">Paper-style architecture diagram for MUTT, a dynamic load-aware scheduler for large language model inference on Ascend NPU clusters.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrowSoft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .page { fill: #ffffff; }
+      .title { font: 700 34px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #0f172a; letter-spacing: 0; }
+      .subtitle { font: 400 17px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #475569; letter-spacing: 0; }
+      .section { font: 700 18px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #0f172a; letter-spacing: 0; }
+      .label { font: 600 16px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #1e293b; letter-spacing: 0; }
+      .small { font: 400 13px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #475569; letter-spacing: 0; }
+      .tiny { font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #64748b; letter-spacing: 0; }
+      .box { fill: #ffffff; stroke: #334155; stroke-width: 1.4; rx: 6; }
+      .group { fill: #f8fafc; stroke: #1e293b; stroke-width: 1.5; rx: 8; }
+      .softbox { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.2; rx: 6; }
+      .accentbox { fill: #eff6ff; stroke: #1d4ed8; stroke-width: 1.5; rx: 6; }
+      .line { fill: none; stroke: #334155; stroke-width: 2; marker-end: url(#arrow); }
+      .lineBlue { fill: none; stroke: #1d4ed8; stroke-width: 2.2; marker-end: url(#arrowBlue); }
+      .lineSoft { fill: none; stroke: #64748b; stroke-width: 1.6; marker-end: url(#arrowSoft); }
+      .dash { fill: none; stroke: #64748b; stroke-width: 1.6; stroke-dasharray: 7 7; marker-end: url(#arrowSoft); }
+      .feedback { fill: none; stroke: #1d4ed8; stroke-width: 1.8; stroke-dasharray: 8 7; marker-end: url(#arrowBlue); }
+      .machine { fill: #ffffff; stroke: #334155; stroke-width: 1.6; rx: 6; }
+      .machineAccent { fill: #eff6ff; stroke: #1d4ed8; stroke-width: 1.7; rx: 6; }
+      .port { fill: #334155; }
+      .portBlue { fill: #1d4ed8; }
+      .chip { fill: #ffffff; stroke: #334155; stroke-width: 1.3; rx: 4; }
+      .poolBand { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.1; rx: 8; }
+    </style>
+  </defs>
+
+  <rect class="page" width="1440" height="900"/>
+
+  <text class="title" x="72" y="70">MUTT Architecture</text>
+  <text class="subtitle" x="72" y="101">Dynamic load-aware scheduling for LLM inference on Ascend NPU resource pools</text>
+
+  <!-- Clients -->
+  <g transform="translate(72 260)">
+    <text class="section" x="0" y="-38">Request Sources</text>
+    <g transform="translate(4 0)">
+      <rect class="machine" x="0" y="0" width="74" height="48"/>
+      <circle class="port" cx="14" cy="14" r="3"/>
+      <line x1="26" y1="14" x2="62" y2="14" stroke="#64748b" stroke-width="1.2"/>
+      <line x1="14" y1="27" x2="62" y2="27" stroke="#cbd5e1" stroke-width="1.2"/>
+      <line x1="14" y1="38" x2="50" y2="38" stroke="#cbd5e1" stroke-width="1.2"/>
+    </g>
+    <g transform="translate(42 68)">
+      <rect class="machine" x="0" y="0" width="74" height="48"/>
+      <circle class="port" cx="14" cy="14" r="3"/>
+      <line x1="26" y1="14" x2="62" y2="14" stroke="#64748b" stroke-width="1.2"/>
+      <line x1="14" y1="27" x2="62" y2="27" stroke="#cbd5e1" stroke-width="1.2"/>
+      <line x1="14" y1="38" x2="50" y2="38" stroke="#cbd5e1" stroke-width="1.2"/>
+    </g>
+    <g transform="translate(0 144)">
+      <rect class="softbox" x="0" y="0" width="168" height="86"/>
+      <text class="label" x="18" y="31">OpenAI-compatible</text>
+      <text class="small" x="18" y="55">chat/completions</text>
+    </g>
+  </g>
+
+  <!-- Admin / observability -->
+  <g transform="translate(340 138)">
+    <rect class="softbox" x="0" y="0" width="760" height="88"/>
+    <text class="section" x="24" y="32">Control and Observation Plane</text>
+    <text class="small" x="24" y="59">/admin/state, /admin/capacity, /admin/health, /metrics</text>
+    <text class="small" x="410" y="59">Prometheus, bench scripts, experiment collector</text>
+  </g>
+
+  <!-- Router group -->
+  <g transform="translate(310 270)">
+    <rect class="group" x="0" y="0" width="520" height="392"/>
+    <text class="section" x="28" y="38">MUTT Router</text>
+    <text class="small" x="156" y="38">Go data plane and admin plane</text>
+
+    <rect class="accentbox" x="28" y="68" width="212" height="96"/>
+    <text class="label" x="48" y="99">Data Plane</text>
+    <text class="small" x="48" y="123">Reverse proxy</text>
+    <text class="small" x="48" y="145">Streaming forwarding</text>
+
+    <rect class="box" x="280" y="68" width="212" height="96"/>
+    <text class="label" x="300" y="99">Pool Router</text>
+    <text class="small" x="300" y="123">X-Resource-Pool</text>
+    <text class="small" x="300" y="145">default / isolated</text>
+
+    <rect class="box" x="28" y="190" width="212" height="122"/>
+    <text class="label" x="48" y="221">Scheduler</text>
+    <text class="small" x="48" y="245">SWRR baseline</text>
+    <text class="small" x="48" y="267">P2C smooth WRR</text>
+    <text class="small" x="48" y="289">Balanced P2C probe</text>
+
+    <rect class="box" x="280" y="190" width="212" height="122"/>
+    <text class="label" x="300" y="221">Weight Controller</text>
+    <text class="small" x="300" y="245">capacity x headroom</text>
+    <text class="small" x="300" y="267">EWMA load score</text>
+    <text class="small" x="300" y="289">smooth effective weight</text>
+
+    <rect class="box" x="28" y="336" width="212" height="34"/>
+    <text class="small" x="48" y="358">active / draining / drained / recovering</text>
+
+    <rect class="box" x="280" y="336" width="212" height="34"/>
+    <text class="small" x="300" y="358">health check / ejection / cooloff</text>
+  </g>
+
+  <!-- Resource pools -->
+  <g transform="translate(950 260)">
+    <text class="section" x="0" y="-38">NPU Inference Resource Pools</text>
+    <rect class="poolBand" x="0" y="0" width="366" height="236"/>
+    <text class="label" x="24" y="34">default pool</text>
+    <text class="small" x="124" y="34">Ascend 910B, vLLM-Ascend</text>
+
+    <g transform="translate(28 70)">
+      <rect class="machineAccent" x="0" y="0" width="72" height="64"/>
+      <rect class="chip" x="17" y="14" width="38" height="28"/>
+      <circle class="portBlue" cx="19" cy="52" r="3"/>
+      <line x1="30" y1="52" x2="57" y2="52" stroke="#94a3b8" stroke-width="1.2"/>
+      <text class="tiny" x="2" y="86">NPU3</text>
+    </g>
+    <g transform="translate(108 70)">
+      <rect class="machine" x="0" y="0" width="72" height="64"/>
+      <rect class="chip" x="17" y="14" width="38" height="28"/>
+      <circle class="port" cx="19" cy="52" r="3"/>
+      <line x1="30" y1="52" x2="57" y2="52" stroke="#94a3b8" stroke-width="1.2"/>
+      <text class="tiny" x="2" y="86">NPU4</text>
+    </g>
+    <g transform="translate(188 70)">
+      <rect class="machine" x="0" y="0" width="72" height="64"/>
+      <rect class="chip" x="17" y="14" width="38" height="28"/>
+      <circle class="port" cx="19" cy="52" r="3"/>
+      <line x1="30" y1="52" x2="57" y2="52" stroke="#94a3b8" stroke-width="1.2"/>
+      <text class="tiny" x="2" y="86">NPU5</text>
+    </g>
+    <g transform="translate(268 70)">
+      <rect class="machine" x="0" y="0" width="72" height="64"/>
+      <rect class="chip" x="17" y="14" width="38" height="28"/>
+      <circle class="port" cx="19" cy="52" r="3"/>
+      <line x1="30" y1="52" x2="57" y2="52" stroke="#94a3b8" stroke-width="1.2"/>
+      <text class="tiny" x="2" y="86">NPU6/7</text>
+    </g>
+
+    <text class="small" x="24" y="190">Signals: running, waiting, KV cache, latency, health</text>
+    <text class="small" x="24" y="214">Capacity events: 10 -> 1 -> 10 without interrupting in-flight requests</text>
+
+    <rect class="poolBand" x="0" y="268" width="366" height="132"/>
+    <text class="label" x="24" y="302">isolated pool</text>
+    <text class="small" x="124" y="302">dedicated SLA or model group</text>
+    <g transform="translate(28 328)">
+      <rect class="machine" x="0" y="0" width="72" height="48"/>
+      <rect class="chip" x="17" y="10" width="38" height="22"/>
+      <circle class="port" cx="19" cy="40" r="3"/>
+      <line x1="30" y1="40" x2="57" y2="40" stroke="#94a3b8" stroke-width="1.2"/>
+    </g>
+    <text class="small" x="124" y="354">Independent scheduler state</text>
+    <text class="small" x="124" y="376">No cross-pool traffic leakage</text>
+  </g>
+
+  <!-- Feedback sources -->
+  <g transform="translate(360 720)">
+    <rect class="softbox" x="0" y="0" width="674" height="96"/>
+    <text class="section" x="24" y="35">Load Feedback</text>
+    <text class="small" x="24" y="63">vLLM /metrics, NPU exporter, router-local inflight and latency EWMA</text>
+    <text class="small" x="434" y="63">EWMA smoothing and non-finite guard</text>
+  </g>
+
+  <!-- Flow arrows -->
+  <path class="lineBlue" d="M 196 368 C 245 368, 265 354, 310 354"/>
+  <text class="tiny" x="222" y="342">request stream</text>
+
+  <path class="line" d="M 830 396 C 878 396, 898 380, 950 380"/>
+  <path class="line" d="M 830 426 C 878 426, 898 498, 950 586"/>
+  <text class="tiny" x="852" y="371">selected backend</text>
+
+  <path class="feedback" d="M 1120 504 C 1120 690, 884 690, 790 720"/>
+  <text class="tiny" x="1044" y="682">metrics feedback</text>
+
+  <path class="dash" d="M 720 226 C 720 244, 720 250, 720 270"/>
+  <path class="dash" d="M 898 226 C 898 244, 898 250, 898 330"/>
+  <text class="tiny" x="744" y="250">admin control</text>
+
+  <path class="lineSoft" d="M 590 662 C 590 686, 590 698, 590 720"/>
+  <text class="tiny" x="604" y="696">local observations</text>
+
+  <!-- In-router arrows -->
+  <path class="lineSoft" d="M 552 386 L 590 386"/>
+  <path class="lineSoft" d="M 444 434 C 456 434, 470 434, 486 434"/>
+  <path class="lineSoft" d="M 590 486 L 552 486"/>
+  <path class="lineSoft" d="M 444 544 C 488 564, 552 564, 590 544"/>
+
+  <!-- Caption -->
+  <text class="tiny" x="72" y="858">Figure: MUTT separates data-plane forwarding from load-aware scheduling and feedback control. Text boxes contain text only; node and link symbols are drawn as line icons.</text>
+</svg>

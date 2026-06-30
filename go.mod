@@ -1,3 +1,3 @@
-module suan-router
+module mutt
 
 go 1.22

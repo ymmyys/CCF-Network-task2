@@ -2,10 +2,10 @@
 
 ROUTER_CONTAINER="${ROUTER_CONTAINER:-yijq27-cann851}"
 CONTAINER_REPO="${CONTAINER_REPO:-/workspace/Track1_fuiglwgfnq_repos}"
-ROUTER_BIN="${ROUTER_BIN:-/workspace/bin/suan-router}"
+ROUTER_BIN="${ROUTER_BIN:-/workspace/bin/mutt}"
 ROUTER_DATA_PORT="${ROUTER_DATA_PORT:-8180}"
 ROUTER_ADMIN_PORT="${ROUTER_ADMIN_PORT:-8181}"
-ROUTER_PID_FILE="${ROUTER_PID_FILE:-/tmp/suan-router-real-experiment.pid}"
+ROUTER_PID_FILE="${ROUTER_PID_FILE:-/tmp/mutt-real-experiment.pid}"
 MODEL="${MODEL:-qwen2.5-1.5b-instruct}"
 
 SHORT_BODY="${SHORT_BODY:-}"
@@ -68,7 +68,7 @@ assert_router_ports_free() {
 start_router() {
   local config="$1"
   local tag="$2"
-  local log_path="/workspace/logs/suan-router-${tag}.log"
+  local log_path="/workspace/logs/mutt-${tag}.log"
 
   stop_tracked_router
   assert_router_ports_free

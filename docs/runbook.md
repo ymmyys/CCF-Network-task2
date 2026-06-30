@@ -121,7 +121,7 @@ docker run -itd \
 docker exec yijq27-cann851 bash -lc '
   cd /workspace/Track1_fuiglwgfnq_repos &&
   go test ./... &&
-  go build -o /workspace/bin/suan-router ./cmd/router
+  go build -o /workspace/bin/mutt ./cmd/router
 '
 ```
 
@@ -411,10 +411,10 @@ config/router.qwen7b-5backends-balanced.json
 
 ```bash
 docker exec yijq27-cann851 bash -lc '
-  pidfile=/tmp/suan-router-real-experiment.pid
+  pidfile=/tmp/mutt-real-experiment.pid
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile")
-    if [ -n "$pid" ] && ps -p "$pid" -o args= | grep -q /workspace/bin/suan-router; then
+    if [ -n "$pid" ] && ps -p "$pid" -o args= | grep -q /workspace/bin/mutt; then
       kill "$pid"
     fi
     rm -f "$pidfile"

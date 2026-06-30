@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"suan-router/internal/router"
+	"mutt/internal/router"
 )
 
 func main() {

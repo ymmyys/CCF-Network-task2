@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/workspace/Track1_fuiglwgfnq_repos}"
-WORK_DIR="${WORK_DIR:-/tmp/suan-router-arch-realrun}"
-ROUTER_BIN="$WORK_DIR/suan-router"
+WORK_DIR="${WORK_DIR:-/tmp/mutt-arch-realrun}"
+ROUTER_BIN="$WORK_DIR/mutt"
 ROUTER_CONFIG="$WORK_DIR/router.json"
 ROUTER_LOG="$WORK_DIR/router.log"
 ROUTER_PID_FILE="$WORK_DIR/router.pid"
@@ -115,7 +115,7 @@ OpenAI 客户端
   |
   |  /v1/chat/completions
   v
-suan-router 数据面 :18180
+MUTT 数据面 :18180
   |-- 管理面 /admin/state :18181
   |-- Prometheus /metrics :18181
   |-- 调度：P2C + smooth weighted round robin

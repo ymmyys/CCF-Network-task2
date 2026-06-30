@@ -1,11 +1,13 @@
-# 文档索引
+# MUTT 文档索引
 
 当前正式文档只保留以下入口：
 
 | 文档 | 用途 |
 |---|---|
 | [`runbook.md`](runbook.md) | 远程容器内启动、停止、测试、实验复现和迁移操作手册 |
-| [`final-report.md`](final-report.md) | 面向赛题提交的最终技术报告和核心实验结论 |
+| [`final-report.md`](final-report.md) | 面向赛题提交的 MUTT 设计方案、核心实验结论和证据边界 |
+| [`GPU Scale-Out Hybrid-2026-06-29-132825.png`](GPU%20Scale-Out%20Hybrid-2026-06-29-132825.png) | 技术路线图 |
+| [`arch.png`](arch.png) | MUTT 总体架构图 |
 | [`experiment-results.md`](experiment-results.md) | 已入库真实 NPU 实验数据索引 |
 | [`experiments.md`](experiments.md) | 实验设计、指标和验收口径 |
 | [`optimization-and-validation.md`](optimization-and-validation.md) | 调度优化点、验证结果和后续增强 |

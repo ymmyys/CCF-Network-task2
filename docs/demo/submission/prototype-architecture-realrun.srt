@@ -1,6 +1,6 @@
 1
 00:00:00,000 --> 00:00:07,000
-架构：OpenAI 客户端进入 suan-router，再分发到 NPU 3-7 上的 5 个 vLLM-Ascend 后端。
+架构：OpenAI 客户端进入 MUTT，再分发到 NPU 3-7 上的 5 个 vLLM-Ascend 后端。
 
 2
 00:00:07,000 --> 00:00:17,000

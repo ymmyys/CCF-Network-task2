@@ -30,8 +30,8 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 
 所有正式脚本都会加载 `scripts/lib_real_npu.sh`：
 
-- 启动 router 时写入 `/tmp/suan-router-real-experiment.pid`；
-- 清理时只停止 PID 文件记录且命令行为 `/workspace/bin/suan-router` 的进程；
+- 启动 MUTT 时写入 `/tmp/mutt-real-experiment.pid`；
+- 清理时只停止 PID 文件记录且命令行为 `/workspace/bin/mutt` 的进程；
 - 如果 `8180/8181` 被未知进程占用，脚本直接退出；
 - 故障实验只停止/启动 `yijq27-vllm-qwen15b-5`。
 
@@ -113,7 +113,7 @@ bash scripts/recordrealrun.sh
 
 脚本展示内容：
 
-- suan-router 架构：client -> router -> NPU 3-7 上的 5 个 vLLM-Ascend 后端；
+- MUTT 架构：client -> router -> NPU 3-7 上的 5 个 vLLM-Ascend 后端；
 - `cmd`、`internal/router`、`config` 代码入口和调度关键实现位置；
 - 5 个真实后端 `/health` 与 `npu-smi info`；
 - `go build` 当前 router，并生成临时 `18180/18181` 配置；

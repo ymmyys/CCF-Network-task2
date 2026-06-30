@@ -11,7 +11,7 @@
 
 这版视频不是 PPT，也不是离线合成图表，而是在远程 VS Code 已连接 Ascend CANN 容器的状态下录制真实命令执行过程：
 
-1. 项目架构：客户端请求进入 suan-router，再分发到 5 个真实 vLLM-Ascend 后端。
+1. 项目架构：客户端请求进入 MUTT，再分发到 5 个真实 vLLM-Ascend 后端。
 2. 代码证据：展示 router 入口、调度器、后端状态机、`metrics_url`、负载分数与平滑权重更新的位置。
 3. 硬件证据：检查 9021/9022/9026/9027/9028 的 `/health`，并展示 `npu-smi info`。
 4. 运行证据：容器内 `go build` 当前 router，启动临时数据面和管理面。
