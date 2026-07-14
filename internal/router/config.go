@@ -60,9 +60,11 @@ type LoadPolicy struct {
 	QueueWeight        float64 `json:"queue_weight"`
 	InflightWeight     float64 `json:"inflight_weight"`
 	KVCacheWeight      float64 `json:"kv_cache_weight"`
+	HBMWeight          float64 `json:"hbm_weight"`
 	LatencyWeight      float64 `json:"latency_weight"`
 	QueueSoftLimit     float64 `json:"queue_soft_limit"`
 	KVCacheSoftLimit   float64 `json:"kv_cache_soft_limit"`
+	HBMSoftLimit       float64 `json:"hbm_soft_limit"`
 	LatencySLOMillis   float64 `json:"latency_slo_ms"`
 	MinHealthyFraction float64 `json:"min_healthy_fraction"`
 }
@@ -73,13 +75,14 @@ type PoolConfig struct {
 }
 
 type BackendConfig struct {
-	ID           string  `json:"id"`
-	URL          string  `json:"url"`
-	Capacity     float64 `json:"capacity"`
-	MaxInflight  int64   `json:"max_inflight"`
-	HealthURL    string  `json:"health_url"`
-	MetricsURL   string  `json:"metrics_url"`
-	PreserveHost bool    `json:"preserve_host"`
+	ID           string   `json:"id"`
+	URL          string   `json:"url"`
+	Capacity     float64  `json:"capacity"`
+	MaxInflight  int64    `json:"max_inflight"`
+	HealthURL    string   `json:"health_url"`
+	MetricsURL   string   `json:"metrics_url"`
+	MetricsURLs  []string `json:"metrics_urls"`
+	PreserveHost bool     `json:"preserve_host"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -146,11 +149,13 @@ func (cfg *Config) applyDefaults() {
 		cfg.Load.QueueWeight <= 0 &&
 		cfg.Load.InflightWeight <= 0 &&
 		cfg.Load.KVCacheWeight <= 0 &&
+		cfg.Load.HBMWeight <= 0 &&
 		cfg.Load.LatencyWeight <= 0 {
 		cfg.Load.UtilizationWeight = 0.45
 		cfg.Load.QueueWeight = 0.20
 		cfg.Load.InflightWeight = 0.15
 		cfg.Load.KVCacheWeight = 0.10
+		cfg.Load.HBMWeight = 0
 		cfg.Load.LatencyWeight = 0.10
 	}
 	if cfg.Load.QueueSoftLimit <= 0 {
@@ -158,6 +163,9 @@ func (cfg *Config) applyDefaults() {
 	}
 	if cfg.Load.KVCacheSoftLimit <= 0 {
 		cfg.Load.KVCacheSoftLimit = 1
+	}
+	if cfg.Load.HBMSoftLimit <= 0 {
+		cfg.Load.HBMSoftLimit = 1
 	}
 	if cfg.Load.LatencySLOMillis <= 0 {
 		cfg.Load.LatencySLOMillis = 2000
@@ -218,9 +226,13 @@ func (cfg Config) validate() error {
 					return fmt.Errorf("backend %q health_url: %w", backend.ID, err)
 				}
 			}
+			metricsURLs := append([]string{}, backend.MetricsURLs...)
 			if backend.MetricsURL != "" {
-				if _, err := url.ParseRequestURI(backend.MetricsURL); err != nil {
-					return fmt.Errorf("backend %q metrics_url: %w", backend.ID, err)
+				metricsURLs = append(metricsURLs, backend.MetricsURL)
+			}
+			for _, metricsURL := range metricsURLs {
+				if _, err := url.ParseRequestURI(metricsURL); err != nil {
+					return fmt.Errorf("backend %q metrics url %q: %w", backend.ID, metricsURL, err)
 				}
 			}
 		}

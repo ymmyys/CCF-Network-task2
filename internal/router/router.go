@@ -251,6 +251,7 @@ func (rt *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {
 			fmt.Fprintf(w, "router_backend_remote_utilization{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.RemoteUtilization)
 			fmt.Fprintf(w, "router_backend_queue_depth{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.QueueDepth)
 			fmt.Fprintf(w, "router_backend_kv_cache_usage{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.KVCacheUsage)
+			fmt.Fprintf(w, "router_backend_hbm_usage{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.HBMUsage)
 			fmt.Fprintf(w, "router_backend_latency_ewma_ms{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.LatencyEWMAMillis)
 		}
 	}

@@ -1,0 +1,13 @@
+services:
+  mutt:
+    build:
+      context: .
+    image: mutt-router:latest
+    command: ["-config", "/app/config/router.example.json"]
+    ports:
+      - "8180:8080"
+      - "8181:8081"
+    volumes:
+      - ./config:/app/config:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

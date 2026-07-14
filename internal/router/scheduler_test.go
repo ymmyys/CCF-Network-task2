@@ -1,8 +1,11 @@
 package router
 
 import (
+	"context"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -389,6 +392,101 @@ vllm:gpu_cache_usage_perc{engine="0",model_name="qwen2.5-1.5b-instruct"} 75.0
 	}
 	if sample.kvCache != 0.75 {
 		t.Fatalf("kv cache = %v, want 0.75", sample.kvCache)
+	}
+}
+
+func TestMetricsSampleParsesNPUHBMSignals(t *testing.T) {
+	sample := parseMetricsSample([]byte(`
+ascend_npu_ai_core_utilization_percent{device_id="3"} 81
+ascend_npu_hbm_usage_percent{device_id="3"} 68
+ascend_npu_hbm_used_bytes{device_id="3"} 1024
+`), LoadPolicy{
+		HBMSoftLimit: 2048,
+	})
+
+	if sample.utilization != 0.81 {
+		t.Fatalf("utilization = %v, want 0.81", sample.utilization)
+	}
+	if sample.hbm != 0.68 {
+		t.Fatalf("hbm = %v, want 0.68", sample.hbm)
+	}
+}
+
+func TestMetricsSampleParsesAbsoluteNPUHBMWhenSoftLimitConfigured(t *testing.T) {
+	sample := parseMetricsSample([]byte(`
+ascend_npu_hbm_used_bytes{device_id="3"} 1024
+`), LoadPolicy{
+		HBMSoftLimit: 2048,
+	})
+
+	if sample.hbm != 0.5 {
+		t.Fatalf("hbm = %v, want 0.5", sample.hbm)
+	}
+}
+
+func TestBackendScrapeMergesMultipleMetricsURLs(t *testing.T) {
+	vllm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`
+vllm:num_requests_running 4
+vllm:num_requests_waiting 2
+vllm:gpu_cache_usage_perc 25
+`))
+	}))
+	defer vllm.Close()
+
+	npu := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`
+ascend_npu_ai_core_utilization_percent 70
+ascend_npu_hbm_usage_percent 60
+`))
+	}))
+	defer npu.Close()
+
+	cfg := Config{
+		DefaultPool: "default",
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:          "npu-a",
+				URL:         "http://127.0.0.1:9001",
+				Capacity:    10,
+				MetricsURLs: []string{vllm.URL, npu.URL},
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+	cfg.Load.QueueSoftLimit = 8
+	cfg.Load.HBMWeight = 0.1
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	backend.scrapeMetrics(context.Background(), http.DefaultClient, rt.cfg.Load)
+	state := backend.state(time.Now())
+	if state.RemoteUtilization != 0.7 {
+		t.Fatalf("remote utilization = %v, want 0.7", state.RemoteUtilization)
+	}
+	if state.QueueDepth != 2 {
+		t.Fatalf("queue depth = %v, want 2", state.QueueDepth)
+	}
+	if state.KVCacheUsage != 0.25 {
+		t.Fatalf("kv cache = %v, want 0.25", state.KVCacheUsage)
+	}
+	if state.HBMUsage != 0.6 {
+		t.Fatalf("hbm = %v, want 0.6", state.HBMUsage)
+	}
+}
+
+func TestWeightedLoadScoreIncludesHBM(t *testing.T) {
+	policy := LoadPolicy{HBMWeight: 1}
+	if got := weightedLoadScore(policy, 0, 0, 0, 0, 0.75, 0); got != 0.75 {
+		t.Fatalf("load score = %v, want 0.75", got)
 	}
 }
 

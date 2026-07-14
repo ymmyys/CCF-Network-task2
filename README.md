@@ -1,13 +1,13 @@
 # MUTT
 
-**MUTT**（Multi-signal Unified Traffic Tuner，多信号统一流量调优器）是面向赛题 2「大模型推理算力资源动态负载感知调度」的 OpenAI-compatible 推理网关。它部署在客户端与 vLLM-Ascend 后端之间，根据后端健康状态、capacity、本地 inflight、vLLM `/metrics` 和资源池策略动态选择目标 Ascend NPU。
+**MUTT**（Multi-signal Unified Traffic Tuner，多信号统一流量调优器）是面向赛题 2「大模型推理算力资源动态负载感知调度」的 OpenAI-compatible 推理网关。它部署在客户端与 vLLM-Ascend 后端之间，根据后端健康状态、capacity、本地 inflight、vLLM `/metrics`、可选 NPU exporter 指标和资源池策略动态选择目标 Ascend NPU。
 
 ## 项目目标
 
 赛题要求在 Ascend NPU 推理集群中避免热点、支持动态 capacity 变化、节点故障摘除、多资源池隔离，并在 capacity 从 10 降到 1 时平滑迁移新请求而不中断已分配请求。MUTT 已实现：
 
 - 资源池隔离：请求头 `X-Resource-Pool` 选择资源池，未指定时进入 `default`。
-- 动态权重：`desired_weight = capacity * headroom`，`headroom` 来自 NPU/vLLM 指标和本地 inflight。
+- 动态权重：`desired_weight = capacity * headroom`，`headroom` 来自 vLLM running/waiting、KV cache、本地 inflight、延迟 EWMA 和可选 HBM 指标。
 - 平滑迁移：`effective_weight += (desired_weight - effective_weight) * smooth_step`。
 - 负载感知调度：`swrr`、`p2c_smooth_wrr`，以及可选 `balanced_p2c`。
 - 高可用闭环：健康检查、被动熔断、代理错误短暂 cooloff、recovering slow-start。
@@ -18,8 +18,8 @@
 | 评审项 | MUTT 对应设计 | 证据 |
 |---|---|---|
 | 创意新颖性 30% | 多信号闭环权重控制、SWRR-P2C 双层调度、draining/recovering 平滑状态机、balanced P2C 探测流量 | 热点避让、动态降容、故障恢复均有独立实验 |
-| 算力网特性利用程度 40% | 使用 Ascend 910B 真实 NPU、vLLM-Ascend `/metrics`、KV cache、running/waiting、资源池隔离、capacity 管理面和健康状态 | 正式实验只引用 NPU3-7 真实后端，不把 fake backend 写入主结论 |
-| 方案可行性 30% | Go 标准库数据面、零外部运行依赖、可复现脚本、Prometheus 指标、PID 文件安全清理 | `go test ./...` 通过，`bench/results/formal/` 已入库真实实验结果 |
+| 算力网特性利用程度 40% | 使用 Ascend 910B 真实 NPU、vLLM-Ascend `/metrics`、可选 NPU exporter/HBM、KV cache、running/waiting、资源池隔离、capacity 管理面和健康状态 | 正式实验只引用 NPU3-7 真实后端，不把 fake backend 写入主结论 |
+| 方案可行性 30% | Go 标准库数据面、零外部运行依赖、Docker/Compose、可复现脚本、Prometheus 指标、PID 文件安全清理 | `go test ./...` 通过，`bench/results/formal/` 已入库真实实验结果 |
 
 ## 系统架构
 
@@ -49,6 +49,14 @@ vLLM-Ascend containers on Ascend 910B
 ```bash
 go run ./cmd/router -config config/router.example.json
 ```
+
+容器化启动示例：
+
+```bash
+docker compose up --build
+```
+
+Compose 默认将容器内 `8080/8081` 映射到宿主机 `8180/8181`，便于和真实 NPU 实验脚本、Live Console 端口保持一致。
 
 Kunlun-02 Ascend 实验环境中，在 CANN 容器内构建和运行 MUTT：
 
@@ -84,6 +92,8 @@ python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 878
 - 设计方案：[`docs/final-report.md`](docs/final-report.md)
 - 技术路线图：[`docs/GPU Scale-Out Hybrid-2026-06-29-132825.png`](docs/GPU%20Scale-Out%20Hybrid-2026-06-29-132825.png)
 - 架构图：[`docs/arch.png`](docs/arch.png)
+- NPU exporter 配置模板：[`config/router.qwen15b-5backends-npu-exporter.example.json`](config/router.qwen15b-5backends-npu-exporter.example.json)
+- 7B latency-aware 配置：[`config/router.qwen7b-5backends-latency.json`](config/router.qwen7b-5backends-latency.json)
 - 实验设计：[`docs/experiments.md`](docs/experiments.md)、[`docs/optimization-and-validation.md`](docs/optimization-and-validation.md)
 - 原型展示材料：[`docs/demo/submission/`](docs/demo/submission/)
 - 原型视频：[`docs/demo/submission/prototype-architecture-realrun-subtitled.mp4`](docs/demo/submission/prototype-architecture-realrun-subtitled.mp4)

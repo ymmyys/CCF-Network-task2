@@ -34,7 +34,7 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 | exp5 资源池隔离 | `run_experiment5_noisy.sh` | `exp5-real-default.csv`, `exp5-real-isolated.csv` |
 | exp6 综合剧本 | `run_experiment6.sh` | `exp6-real-comprehensive.csv` |
 | exp7 smoothStep | `run_smoothstep_experiment.sh` | `exp7-real-ss*.csv` |
-| exp8 7B 泛化热点压力 | `run_experiment8_qwen7b_real.sh` | `exp8-qwen7b-hotspot-*.csv`, `exp8-qwen7b-hotspot-*-metrics.csv` |
+| exp8 7B 泛化热点压力 | `run_experiment8_qwen7b_real.sh` | `exp8-qwen7b-hotspot-*.csv`, `exp8-qwen7b-hotspot-*-metrics.csv`，含 latency-aware 组 |
 
 所有正式脚本都会加载 `scripts/lib_real_npu.sh`：
 
@@ -107,6 +107,17 @@ router_kv_cache_usage
 SWRR 配置故意不配置 `metrics_url`，作为静态基线；P2C 和 balanced P2C 配置 vLLM `/metrics`，用于验证实时负载感知。
 
 exp8 使用 `config/router.qwen7b-5backends-*.json`，验证同一热点避让逻辑在 Qwen2.5-7B-Instruct 上是否仍成立。
+新增 `config/router.qwen7b-5backends-latency.json` 用于补跑 7B 尾延迟优化组。
+
+## NPU exporter 配置模板
+
+如果目标环境部署了 NPU exporter，可参考：
+
+```text
+config/router.qwen15b-5backends-npu-exporter.example.json
+```
+
+每个后端通过 `metrics_urls` 同时读取 vLLM 和设备级 exporter 指标，router 会在 `/admin/state` 和 `/metrics` 中暴露 `hbm_usage` / `router_backend_hbm_usage`。
 
 ## 原型录屏脚本
 

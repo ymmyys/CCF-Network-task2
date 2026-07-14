@@ -53,6 +53,7 @@ bench/results/formal/
 - `/admin/state` 中的 phase、capacity、desired/effective weight、inflight；
 - `/metrics` 中的 router 状态；
 - vLLM `num_requests_running`、`num_requests_waiting`、GPU/KV cache usage；
+- 可选 NPU exporter 指标：AI Core/NPU utilization、HBM usage；
 
 ## 复现命令
 
@@ -67,6 +68,13 @@ RESULTS_DIR=bench/results/real-npu-$(date +%Y%m%d%H%M%S) \
 ```bash
 RESULTS_DIR=bench/results/real-npu-qwen7b-$(date +%Y%m%d%H%M%S) \
   scripts/run_experiment8_qwen7b_real.sh
+```
+
+该脚本现在会额外输出 `latency` 组：
+
+```text
+exp8-qwen7b-hotspot-latency.csv
+exp8-qwen7b-hotspot-latency-metrics.csv
 ```
 
 生成汇总：
@@ -86,3 +94,4 @@ python3 bench/generate_summary.py \
 - exp5：default 池 28,218 请求 0 错误，isolated 池 1,592 请求 0 错误。
 - exp7：smoothStep=0.25 稳定降容占比 2.31%，误差 0.13pp。
 - exp8：Qwen2.5-7B 热点压力下，SWRR 给 NPU3 19.81%；`p2c_smooth_wrr` 降到 0.00%；`balanced_p2c` 保留 3.64%；三组均 0 错误。
+- exp8 latency-aware：新增配置待决赛前补跑，用于验证 7B 尾延迟 trade-off 是否改善。

@@ -70,5 +70,6 @@ check_qwen7b_backends
 run_qwen7b_hotspot_case swrr config/router.qwen7b-5backends-swrr.json
 run_qwen7b_hotspot_case p2c config/router.qwen7b-5backends-p2c.json
 run_qwen7b_hotspot_case balanced config/router.qwen7b-5backends-balanced.json
+run_qwen7b_hotspot_case latency config/router.qwen7b-5backends-latency.json
 
 echo "exp8 done"

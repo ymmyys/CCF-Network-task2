@@ -139,6 +139,7 @@ def main():
             'router_remote_utilization',
             'router_queue_depth',
             'router_kv_cache_usage',
+            'router_hbm_usage',
             'router_latency_ewma_ms'
         ])
         
@@ -171,6 +172,7 @@ def main():
                                         'remote_utilization': backend.get('remote_utilization', 0),
                                         'queue_depth': backend.get('queue_depth', 0),
                                         'kv_cache_usage': backend.get('kv_cache_usage', 0),
+                                        'hbm_usage': backend.get('hbm_usage', 0),
                                         'latency_ewma_ms': backend.get('latency_ewma_ms', 0),
                                     }
                     
@@ -193,6 +195,7 @@ def main():
                         router_info.get('remote_utilization', 0),
                         router_info.get('queue_depth', 0),
                         router_info.get('kv_cache_usage', 0),
+                        router_info.get('hbm_usage', 0),
                         router_info.get('latency_ewma_ms', 0),
                     ])
             

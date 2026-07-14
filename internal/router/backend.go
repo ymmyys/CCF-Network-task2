@@ -33,7 +33,7 @@ type Backend struct {
 	id                      string
 	target                  *url.URL
 	healthURL               string
-	metricsURL              string
+	metricsURLs             []string
 	maxInflight             int64
 	passiveFailureThreshold int
 	passiveEjectDuration    time.Duration
@@ -53,6 +53,7 @@ type Backend struct {
 	remoteUtilization   float64
 	queueDepth          float64
 	kvCacheUsage        float64
+	hbmUsage            float64
 	latencyEWMA         float64
 	lastError           string
 	lastUpdated         time.Time
@@ -80,6 +81,7 @@ type BackendState struct {
 	RemoteUtilization   float64   `json:"remote_utilization"`
 	QueueDepth          float64   `json:"queue_depth"`
 	KVCacheUsage        float64   `json:"kv_cache_usage"`
+	HBMUsage            float64   `json:"hbm_usage"`
 	LatencyEWMAMillis   float64   `json:"latency_ewma_ms"`
 	LastError           string    `json:"last_error,omitempty"`
 	LastUpdated         time.Time `json:"last_updated"`
@@ -92,6 +94,7 @@ type metricsSample struct {
 	utilization float64
 	queueDepth  float64
 	kvCache     float64
+	hbm         float64
 	latencyMS   float64
 }
 
@@ -105,7 +108,7 @@ func newBackend(cfg BackendConfig, routerCfg Config) (*Backend, error) {
 		id:                      cfg.ID,
 		target:                  target,
 		healthURL:               cfg.HealthURL,
-		metricsURL:              cfg.MetricsURL,
+		metricsURLs:             backendMetricsURLs(cfg),
 		maxInflight:             cfg.MaxInflight,
 		passiveFailureThreshold: routerCfg.PassiveFailureThreshold,
 		passiveEjectDuration:    routerCfg.PassiveEjectDuration.Duration,
@@ -274,6 +277,7 @@ func (b *Backend) state(now time.Time) BackendState {
 		RemoteUtilization:   b.remoteUtilization,
 		QueueDepth:          b.queueDepth,
 		KVCacheUsage:        b.kvCacheUsage,
+		HBMUsage:            b.hbmUsage,
 		LatencyEWMAMillis:   b.latencyEWMA,
 		LastError:           b.lastError,
 		LastUpdated:         b.lastUpdated,
@@ -354,10 +358,30 @@ func (b *Backend) refresh(ctx context.Context, client *http.Client, policy LoadP
 	if b.healthURL != "" {
 		b.probeHealth(ctx, client)
 	}
-	if b.metricsURL != "" {
+	if len(b.metricsURLs) > 0 {
 		b.scrapeMetrics(ctx, client, policy)
 	}
 	b.recomputeWeight(policy, smoothStep)
+}
+
+func backendMetricsURLs(cfg BackendConfig) []string {
+	seen := make(map[string]struct{}, len(cfg.MetricsURLs)+1)
+	urls := make([]string, 0, len(cfg.MetricsURLs)+1)
+	if cfg.MetricsURL != "" {
+		seen[cfg.MetricsURL] = struct{}{}
+		urls = append(urls, cfg.MetricsURL)
+	}
+	for _, metricsURL := range cfg.MetricsURLs {
+		if metricsURL == "" {
+			continue
+		}
+		if _, ok := seen[metricsURL]; ok {
+			continue
+		}
+		seen[metricsURL] = struct{}{}
+		urls = append(urls, metricsURL)
+	}
+	return urls
 }
 
 func (b *Backend) probeHealth(ctx context.Context, client *http.Client) {
@@ -406,32 +430,62 @@ func (b *Backend) setProbeHealth(healthy bool, message string) {
 }
 
 func (b *Backend) scrapeMetrics(ctx context.Context, client *http.Client, policy LoadPolicy) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.metricsURL, nil)
-	if err != nil {
-		b.markTelemetryError(fmt.Sprintf("metrics request: %v", err))
+	var sample metricsSample
+	scraped := false
+	lastErr := ""
+	for _, metricsURL := range b.metricsURLs {
+		next, err := fetchMetricsSample(ctx, client, metricsURL, policy)
+		if err != nil {
+			lastErr = err.Error()
+			continue
+		}
+		sample.merge(next)
+		scraped = true
+	}
+	if !scraped {
+		if lastErr == "" {
+			lastErr = "metrics scrape: no metrics urls"
+		}
+		b.markTelemetryError(lastErr)
 		return
+	}
+
+	b.applyMetricsSample(sample, policy)
+}
+
+func fetchMetricsSample(ctx context.Context, client *http.Client, metricsURL string, policy LoadPolicy) (metricsSample, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metricsURL, nil)
+	if err != nil {
+		return metricsSample{}, fmt.Errorf("metrics request %s: %w", metricsURL, err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		b.markTelemetryError(fmt.Sprintf("metrics scrape: %v", err))
-		return
+		return metricsSample{}, fmt.Errorf("metrics scrape %s: %w", metricsURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		b.markTelemetryError(fmt.Sprintf("metrics status %d", resp.StatusCode))
-		return
+		return metricsSample{}, fmt.Errorf("metrics status %s: %d", metricsURL, resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		b.markTelemetryError(fmt.Sprintf("metrics read: %v", err))
-		return
+		return metricsSample{}, fmt.Errorf("metrics read %s: %w", metricsURL, err)
 	}
+	return parseMetricsSample(data, policy), nil
+}
 
-	sample := parseMetricsSample(data, policy)
+func (sample *metricsSample) merge(other metricsSample) {
+	sample.utilization = math.Max(sample.utilization, other.utilization)
+	sample.queueDepth = math.Max(sample.queueDepth, other.queueDepth)
+	sample.kvCache = math.Max(sample.kvCache, other.kvCache)
+	sample.hbm = math.Max(sample.hbm, other.hbm)
+	sample.latencyMS = math.Max(sample.latencyMS, other.latencyMS)
+}
+
+func (b *Backend) applyMetricsSample(sample metricsSample, policy LoadPolicy) {
 	b.mu.Lock()
 	alpha := policy.EWMAAlpha
 	if alpha <= 0 || alpha > 1 {
@@ -451,6 +505,11 @@ func (b *Backend) scrapeMetrics(ctx context.Context, client *http.Client, policy
 		b.kvCacheUsage = sample.kvCache
 	} else {
 		b.kvCacheUsage = alpha*sample.kvCache + (1-alpha)*b.kvCacheUsage
+	}
+	if b.hbmUsage == 0 {
+		b.hbmUsage = sample.hbm
+	} else {
+		b.hbmUsage = alpha*sample.hbm + (1-alpha)*b.hbmUsage
 	}
 	if sample.latencyMS > 0 {
 		b.updateLatencyEWMALocked(sample.latencyMS, alpha)
@@ -486,6 +545,8 @@ func parseJSONMetrics(data []byte, policy LoadPolicy) metricsSample {
 	for key, value := range raw {
 		key = strings.ToLower(key)
 		switch {
+		case looksLikeHBMMetric(key):
+			sample.hbm = math.Max(sample.hbm, normalizeHBMMetric(key, value, policy.HBMSoftLimit))
 		case looksLikeKVCacheMetric(key):
 			sample.kvCache = math.Max(sample.kvCache, normalizeKVCacheMetric(key, value, policy.KVCacheSoftLimit))
 		case looksLikeLatencyMetric(key):
@@ -525,6 +586,8 @@ func parsePrometheusMetrics(text string, policy LoadPolicy) metricsSample {
 		}
 
 		switch {
+		case looksLikeHBMMetric(name):
+			sample.hbm = math.Max(sample.hbm, normalizeHBMMetric(name, value, policy.HBMSoftLimit))
 		case looksLikeKVCacheMetric(name):
 			sample.kvCache = math.Max(sample.kvCache, normalizeKVCacheMetric(name, value, policy.KVCacheSoftLimit))
 		case looksLikeLatencyMetric(name):
@@ -564,6 +627,20 @@ func looksLikeUtilizationMetric(name string) bool {
 		strings.Contains(name, "gpu_util") ||
 		strings.Contains(name, "device_util") ||
 		strings.Contains(name, "utilization_rate")
+}
+
+func looksLikeHBMMetric(name string) bool {
+	if looksLikeKVCacheMetric(name) ||
+		looksLikeLatencyMetric(name) ||
+		looksLikeQueueMetric(name) ||
+		looksLikeActiveRequestMetric(name) {
+		return false
+	}
+	return strings.Contains(name, "hbm") ||
+		strings.Contains(name, "npu_memory") ||
+		strings.Contains(name, "device_memory") ||
+		strings.Contains(name, "memory_usage") ||
+		strings.Contains(name, "memory_utilization")
 }
 
 func looksLikeActiveRequestMetric(name string) bool {
@@ -641,6 +718,23 @@ func normalizeKVCacheMetric(name string, value, softLimit float64) float64 {
 		return clamp(value/softLimit, 0, 1)
 	}
 	return normalizeRatio(value)
+}
+
+func normalizeHBMMetric(name string, value, softLimit float64) float64 {
+	if !isFinite(value) {
+		return 0
+	}
+	if strings.Contains(name, "ratio") ||
+		strings.Contains(name, "rate") ||
+		strings.Contains(name, "perc") ||
+		strings.Contains(name, "percent") ||
+		strings.Contains(name, "util") {
+		return normalizeRatio(value)
+	}
+	if softLimit > 1 {
+		return clamp(value/softLimit, 0, 1)
+	}
+	return 0
 }
 
 func normalizeActiveRequestMetric(value, softLimit float64) float64 {
@@ -729,7 +823,7 @@ func (b *Backend) desiredWeightLocked(policy LoadPolicy, eligible bool, inflight
 	}
 	queueRatio := safeRatio(b.queueDepth, policy.QueueSoftLimit)
 	latencyRatio := safeRatio(b.latencyEWMA, policy.LatencySLOMillis)
-	loadScore := weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, latencyRatio)
+	loadScore := weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, b.hbmUsage, latencyRatio)
 	headroom := 1 - clamp(loadScore, 0, 1)
 	if headroom < policy.MinHealthyFraction {
 		headroom = policy.MinHealthyFraction
@@ -750,7 +844,7 @@ func (b *Backend) p2cLoadScore(policy LoadPolicy) float64 {
 	}
 	queueRatio := safeRatio(b.queueDepth, policy.QueueSoftLimit)
 	latencyRatio := safeRatio(b.latencyEWMA, policy.LatencySLOMillis)
-	return weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, latencyRatio)
+	return weightedLoadScore(policy, b.remoteUtilization, queueRatio, inflightRatio, b.kvCacheUsage, b.hbmUsage, latencyRatio)
 }
 
 func (b *Backend) updateLatencyEWMALocked(latencyMillis, alpha float64) {
@@ -793,11 +887,12 @@ func weightsClose(a, b float64) bool {
 	return diff <= math.Max(0.05, math.Max(a, b)*0.05)
 }
 
-func weightedLoadScore(policy LoadPolicy, utilRatio, queueRatio, inflightRatio, kvCacheRatio, latencyRatio float64) float64 {
+func weightedLoadScore(policy LoadPolicy, utilRatio, queueRatio, inflightRatio, kvCacheRatio, hbmRatio, latencyRatio float64) float64 {
 	total := policy.UtilizationWeight +
 		policy.QueueWeight +
 		policy.InflightWeight +
 		policy.KVCacheWeight +
+		policy.HBMWeight +
 		policy.LatencyWeight
 	if total <= 0 {
 		return 0
@@ -806,6 +901,7 @@ func weightedLoadScore(policy LoadPolicy, utilRatio, queueRatio, inflightRatio, 
 		policy.QueueWeight*clampFinite(queueRatio, 0, 1) +
 		policy.InflightWeight*clampFinite(inflightRatio, 0, 1) +
 		policy.KVCacheWeight*clampFinite(kvCacheRatio, 0, 1) +
+		policy.HBMWeight*clampFinite(hbmRatio, 0, 1) +
 		policy.LatencyWeight*clampFinite(latencyRatio, 0, 1)) / total
 	if !isFinite(score) {
 		return 0

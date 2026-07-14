@@ -109,6 +109,7 @@ headroom       = 1 - weighted_load_score
 | `queue_depth` | vLLM `num_requests_waiting` / waiting / pending 指标 | 感知排队压力 |
 | `inflight` | MUTT 本地计数 | 防止本 router 自己制造热点 |
 | `kv_cache_usage` | vLLM `gpu_cache_usage_perc` / KV cache 指标 | 感知 cache 接近满载 |
+| `hbm_usage` | 可选 NPU exporter HBM 指标 | 感知设备级显存/高带宽内存压力 |
 | `latency_ewma_ms` | MUTT 观测延迟或后端 latency 指标 | 感知尾延迟恶化 |
 
 正式 5 后端配置使用的默认权重如下：
@@ -120,14 +121,16 @@ headroom       = 1 - weighted_load_score
   "queue_weight": 0.25,
   "inflight_weight": 0.20,
   "kv_cache_weight": 0.10,
+  "hbm_weight": 0.00,
   "latency_weight": 0.10,
   "queue_soft_limit": 16,
+  "hbm_soft_limit": 1,
   "latency_slo_ms": 2500,
   "min_healthy_fraction": 0.03
 }
 ```
 
-指标解析采用防御式策略：忽略 Prometheus histogram 的 `_bucket/_count/_sum/_created` 部件，过滤 `NaN/+Inf/-Inf`，避免异常指标直接污染调度权重。
+指标解析采用防御式策略：忽略 Prometheus histogram 的 `_bucket/_count/_sum/_created` 部件，过滤 `NaN/+Inf/-Inf`，避免异常指标直接污染调度权重。若配置 `metrics_urls`，MUTT 会同时读取 vLLM `/metrics` 与 NPU exporter，并将多路指标合并后进入同一个 load score。
 
 ### 4.2 平滑权重控制
 
@@ -212,10 +215,11 @@ MUTT 不把后端 NPU 当作静态 IP 列表，而是把每个推理实例建模
 |---|---|
 | Ascend 910B 实例健康状态 | 主动 `/health` 探测与被动 5xx/代理错误熔断共同决定是否可调度 |
 | vLLM-Ascend 运行态指标 | 从 `/metrics` 解析 running、waiting、GPU/KV cache 等指标进入 load score |
+| NPU exporter 设备级指标 | 通过 `metrics_urls` 额外接入 AI Core/NPU utilization、HBM usage 等硬件压力信号 |
 | 动态 capacity | 管理面 `POST /admin/capacity` 将资源变化转为目标权重变化，用 `smooth_step` 平滑生效 |
 | 多资源池隔离 | `X-Resource-Pool` 选择 pool，每个 pool 独立后端集合、调度状态和锁 |
 | 异构/恢复过程 | recovering slow-start 防止刚恢复或刚扩容的实例被瞬间打满 |
-| 可观测性 | `/metrics` 暴露 capacity、phase、effective weight、inflight、remote utilization、queue depth、KV cache、latency EWMA |
+| 可观测性 | `/metrics` 暴露 capacity、phase、effective weight、inflight、remote utilization、queue depth、KV cache、HBM、latency EWMA |
 
 ## 7. 正式实验环境
 
@@ -364,11 +368,12 @@ bench/results/formal/analysis/real_npu_summary.md
 
 ## 11. 边界与后续演进
 
-MUTT 当前主结论建立在真实 Ascend NPU 3-7、Qwen2.5-1.5B 主套件和 Qwen2.5-7B 热点泛化实验上。后续可以继续增强：
+MUTT 当前主结论建立在真实 Ascend NPU 3-7、Qwen2.5-1.5B 主套件和 Qwen2.5-7B 热点泛化实验上。代码层面已支持 NPU exporter 多路指标接入和 7B latency-aware 配置；后续需要在目标决赛环境补跑对应真机对照。可继续增强：
 
 | 方向 | 价值 |
 |---|---|
-| 接入硬件 NPU exporter | 补充设备级利用率、HBM、温度等信号 |
+| 补跑 NPU exporter 对照实验 | 使用已支持的 `metrics_urls` 和 HBM load score，量化设备级信号收益 |
+| 补跑 7B latency-aware 组 | 使用 `router.qwen7b-5backends-latency.json` 验证 p95 trade-off 是否改善 |
 | token-cost-aware inflight | 按 prompt/max_tokens 估计请求成本，而不是只按请求数计数 |
 | 恢复期自适应回退 | recovering 阶段若延迟或错误升高，自动降低回流速度 |
 | 更多模型矩阵 | 扩展到更长上下文、多模型并发和更复杂资源池策略 |
