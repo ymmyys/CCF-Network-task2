@@ -2,6 +2,8 @@
 
 本目录只保留初赛原型展示的最终材料入口。当前推荐提交的是一段真实远程容器录屏，不再使用 PPT 或合成式视频作为主体。
 
+**决赛现场可视化：** 见 [`live-console.md`](live-console.md)。同学启动 MUTT 后打开 `http://<admin>:8181/demo/`，或运行 `python3 scripts/serve_demo_dashboard.py`。
+
 ## 最终文件
 
 | 文件 | 用途 |

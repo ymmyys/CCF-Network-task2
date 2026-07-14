@@ -5,6 +5,14 @@
 - 正式真实 NPU 实验：使用 Ascend NPU 3-7，可进入报告主结论。
 - 开发夹具：使用 fake backend 或临时端口，只用于调试调度逻辑，不进入正式主结论。
 
+## 现场可视化
+
+```bash
+python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 8787
+```
+
+打开 `http://127.0.0.1:8787/`。详细说明见 [`docs/demo/live-console.md`](../docs/demo/live-console.md)。
+
 ## 正式入口
 
 完整重跑：

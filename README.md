@@ -61,6 +61,22 @@ docker exec yijq27-cann851 bash -lc '
 
 完整操作手册见 [`docs/runbook.md`](docs/runbook.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
+## 现场可视化（Live Console）
+
+兼容现有 `/admin/state` 等接口，同学启动 MUTT 后即可用：
+
+```bash
+# 方式 A：重编后直接打开 admin 内嵌页
+go build -o mutt ./cmd/router
+# http://127.0.0.1:8181/demo/
+
+# 方式 B：不重编二进制，Python 代理打开
+python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 8787
+# http://127.0.0.1:8787/
+```
+
+说明见 [`docs/demo/live-console.md`](docs/demo/live-console.md)。无 NPU 时可点页面「离线演示」预演答辩。
+
 ## 初赛材料
 
 代码仓库提交时，文字材料已放在 README 与 `docs/` 中；原型展示材料放在 `docs/demo/`：

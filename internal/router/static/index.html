@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MUTT Live Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #071016;
+      --bg0: #0a1218;
+      --bg1: #101a22;
+      --bg2: #16232e;
+      --bg3: #1d2d3a;
+      --line: rgba(140, 175, 195, 0.16);
+      --line-strong: rgba(140, 175, 195, 0.28);
+      --text: #edf4f8;
+      --muted: #8fa6b6;
+      --teal: #3ee0c8;
+      --teal-deep: #1aa890;
+      --amber: #ffb020;
+      --rose: #ff5d7a;
+      --ok: #5ee49a;
+      --font: "DM Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --display: "Syne", "DM Sans", "PingFang SC", sans-serif;
+      --mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background: var(--bg0);
+      overflow-x: hidden;
+    }
+
+    /* Atmosphere */
+    .bg-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(900px 520px at 8% -8%, rgba(62, 224, 200, 0.16), transparent 58%),
+        radial-gradient(700px 420px at 92% 0%, rgba(255, 176, 32, 0.10), transparent 52%),
+        radial-gradient(800px 600px at 70% 100%, rgba(62, 224, 200, 0.05), transparent 55%),
+        linear-gradient(180deg, #0c161e 0%, var(--bg0) 42%, #070d12 100%);
+    }
+    .bg-layer::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: 0.22;
+      background-image:
+        linear-gradient(rgba(140, 175, 195, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(140, 175, 195, 0.05) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse at 50% 20%, black 20%, transparent 75%);
+    }
+    .bg-orb {
+      position: absolute;
+      width: 420px;
+      height: 420px;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: 0.22;
+      animation: drift 14s ease-in-out infinite alternate;
+    }
+    .bg-orb.a { left: -80px; top: 120px; background: #1aa890; }
+    .bg-orb.b { right: -60px; top: 280px; background: #c47a10; animation-delay: -4s; }
+    @keyframes drift {
+      from { transform: translate3d(0, 0, 0) scale(1); }
+      to { transform: translate3d(30px, 40px, 0) scale(1.08); }
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 22px 22px 40px;
+    }
+
+    /* Header */
+    header.top {
+      display: grid;
+      grid-template-columns: 1.2fr 1.8fr;
+      gap: 18px;
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 980px) {
+      header.top { grid-template-columns: 1fr; }
+    }
+
+    .brand-panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 4px);
+      background:
+        linear-gradient(135deg, rgba(62, 224, 200, 0.10), transparent 42%),
+        linear-gradient(180deg, rgba(29, 45, 58, 0.95), rgba(12, 20, 27, 0.96));
+      box-shadow: var(--shadow);
+      padding: 22px 24px 20px;
+      animation: rise .6s ease both;
+    }
+    .brand-panel::after {
+      content: "";
+      position: absolute;
+      right: -40px;
+      top: -40px;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(62, 224, 200, 0.22), transparent 68%);
+    }
+    .brand-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--teal);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .brand-kicker i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: 0 0 0 0 rgba(62, 224, 200, 0.55);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(62, 224, 200, 0.5); }
+      70% { box-shadow: 0 0 0 10px rgba(62, 224, 200, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(62, 224, 200, 0); }
+    }
+    .brand-title {
+      margin: 10px 0 6px;
+      font-family: var(--display);
+      font-size: clamp(2rem, 4vw, 2.7rem);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      font-weight: 800;
+    }
+    .brand-title span {
+      background: linear-gradient(120deg, #f4fffc 10%, var(--teal) 55%, #9be7ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .brand-sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      max-width: 34ch;
+      line-height: 1.45;
+    }
+
+    .control-panel {
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 4px);
+      background: linear-gradient(180deg, rgba(22, 35, 46, 0.92), rgba(12, 20, 27, 0.96));
+      box-shadow: var(--shadow);
+      padding: 16px 16px 14px;
+      animation: rise .7s ease both;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: end;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 140px;
+      flex: 1;
+    }
+    .field span {
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    input[type="text"], select {
+      width: 100%;
+      appearance: none;
+      background: rgba(7, 14, 20, 0.72);
+      color: var(--text);
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type="text"]:focus, select:focus {
+      border-color: rgba(62, 224, 200, 0.55);
+      box-shadow: 0 0 0 3px rgba(62, 224, 200, 0.12);
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      align-items: center;
+    }
+    button {
+      font: inherit;
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: transform .12s, border-color .15s, background .15s, box-shadow .15s;
+      white-space: nowrap;
+    }
+    button:hover {
+      border-color: rgba(62, 224, 200, 0.45);
+      background: rgba(62, 224, 200, 0.08);
+    }
+    button:active { transform: translateY(1px); }
+    button.primary {
+      background: linear-gradient(135deg, #36d6be, #1aa890);
+      border-color: transparent;
+      color: #031411;
+      font-weight: 700;
+      box-shadow: 0 8px 24px rgba(26, 168, 144, 0.28);
+    }
+    button.primary:hover {
+      background: linear-gradient(135deg, #4ce6cf, #1db89d);
+      box-shadow: 0 10px 28px rgba(26, 168, 144, 0.38);
+    }
+    button.warn {
+      background: rgba(255, 176, 32, 0.12);
+      border-color: rgba(255, 176, 32, 0.35);
+      color: #ffd27a;
+    }
+    button.danger {
+      background: rgba(255, 93, 122, 0.12);
+      border-color: rgba(255, 93, 122, 0.35);
+      color: #ffb0bf;
+    }
+    button:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .mode-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(0, 0, 0, 0.22);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-family: var(--mono);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .status-dot.ok { background: var(--ok); box-shadow: 0 0 12px rgba(94, 228, 154, 0.55); }
+    .status-dot.bad { background: var(--rose); box-shadow: 0 0 12px rgba(255, 93, 122, 0.5); }
+    .status-dot.warn { background: var(--amber); box-shadow: 0 0 12px rgba(255, 176, 32, 0.45); }
+
+    /* KPI */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 900px) {
+      .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .kpi {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 16px 14px;
+      background: linear-gradient(160deg, rgba(29, 45, 58, 0.85), rgba(12, 20, 27, 0.95));
+      box-shadow: var(--shadow);
+      animation: rise .75s ease both;
+    }
+    .kpi:nth-child(2) { animation-delay: .05s; }
+    .kpi:nth-child(3) { animation-delay: .1s; }
+    .kpi:nth-child(4) { animation-delay: .15s; }
+    .kpi::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--teal), transparent);
+    }
+    .kpi .label {
+      color: var(--muted);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .kpi .value {
+      margin-top: 8px;
+      font-family: var(--display);
+      font-size: 1.7rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .kpi .hint {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.45fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 1100px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 2px);
+      background: linear-gradient(180deg, rgba(18, 29, 38, 0.94), rgba(10, 16, 22, 0.96));
+      box-shadow: var(--shadow);
+      padding: 16px;
+      animation: rise .8s ease both;
+    }
+    .panel-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .panel h2 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 1.05rem;
+      letter-spacing: -0.02em;
+    }
+    .panel-head small {
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .actions-panel { margin-bottom: 14px; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: end;
+    }
+    .actions .field { flex: 0 1 180px; min-width: 160px; }
+
+    .nodes {
+      display: grid;
+      gap: 12px;
+    }
+    .node {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.02), transparent),
+        rgba(7, 14, 20, 0.45);
+      transition: border-color .25s, transform .25s, box-shadow .25s;
+      animation: nodeIn .45s ease both;
+    }
+    @keyframes nodeIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.985); }
+      to { opacity: 1; transform: none; }
+    }
+    .node:hover {
+      transform: translateY(-1px);
+      border-color: rgba(62, 224, 200, 0.28);
+    }
+    .node.hot {
+      border-color: rgba(255, 176, 32, 0.55);
+      box-shadow: inset 0 0 0 1px rgba(255, 176, 32, 0.15), 0 0 28px rgba(255, 176, 32, 0.08);
+      background:
+        linear-gradient(90deg, rgba(255, 176, 32, 0.12), transparent 50%),
+        rgba(7, 14, 20, 0.45);
+    }
+    .node.hot::after {
+      content: "";
+      position: absolute;
+      inset: -40% auto auto -10%;
+      width: 120px;
+      height: 120px;
+      background: radial-gradient(circle, rgba(255, 176, 32, 0.25), transparent 70%);
+      animation: hotGlow 2.2s ease-in-out infinite;
+    }
+    @keyframes hotGlow {
+      0%, 100% { opacity: 0.35; transform: scale(0.9); }
+      50% { opacity: 0.8; transform: scale(1.05); }
+    }
+    .node.down {
+      border-color: rgba(255, 93, 122, 0.5);
+      background:
+        linear-gradient(90deg, rgba(255, 93, 122, 0.12), transparent 55%),
+        rgba(7, 14, 20, 0.45);
+      opacity: 0.92;
+    }
+
+    .node-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .node-id-wrap { display: flex; flex-direction: column; gap: 2px; }
+    .node-id {
+      font-family: var(--mono);
+      font-weight: 600;
+      font-size: 0.98rem;
+    }
+    .node-url {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      max-width: 34ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .badge {
+      font-size: 0.7rem;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(0,0,0,0.2);
+      letter-spacing: 0.02em;
+    }
+    .badge.active { color: #9ef0c5; border-color: rgba(94, 228, 154, 0.35); background: rgba(94, 228, 154, 0.1); }
+    .badge.draining, .badge.drained { color: #ffb0bf; border-color: rgba(255, 93, 122, 0.4); background: rgba(255, 93, 122, 0.1); }
+    .badge.recovering { color: #ffd27a; border-color: rgba(255, 176, 32, 0.4); background: rgba(255, 176, 32, 0.1); }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+      position: relative;
+      z-index: 1;
+    }
+    @media (max-width: 720px) {
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .metric {
+      border: 1px solid rgba(140, 175, 195, 0.1);
+      border-radius: 12px;
+      padding: 8px 9px;
+      background: rgba(0, 0, 0, 0.18);
+    }
+    .metric .k {
+      color: var(--muted);
+      font-size: 0.68rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .metric .v {
+      font-family: var(--mono);
+      font-size: 0.88rem;
+      margin-top: 3px;
+      font-weight: 500;
+    }
+
+    .bars { display: grid; gap: 10px; position: relative; z-index: 1; }
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 5px;
+    }
+    .bar-label b {
+      color: var(--text);
+      font-family: var(--mono);
+      font-weight: 500;
+    }
+    .bar {
+      height: 11px;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid rgba(140, 175, 195, 0.12);
+      position: relative;
+    }
+    .bar > i {
+      display: block;
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #148f80, var(--teal));
+      box-shadow: 0 0 16px rgba(62, 224, 200, 0.35);
+      transition: width .55s cubic-bezier(.22, 1, .36, 1);
+    }
+    .bar.util > i {
+      background: linear-gradient(90deg, #a86a08, var(--amber));
+      box-shadow: 0 0 16px rgba(255, 176, 32, 0.35);
+    }
+
+    .share-list { display: grid; gap: 12px; }
+    .share-row .name {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.82rem;
+      margin-bottom: 5px;
+    }
+    .share-row .name span:first-child {
+      font-family: var(--mono);
+      font-weight: 500;
+    }
+    .share-row .name span:last-child {
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .share-track {
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(140, 175, 195, 0.12);
+      overflow: hidden;
+    }
+    .share-track > i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #1aa890, #7ef0e0);
+      transition: width .55s cubic-bezier(.22, 1, .36, 1);
+    }
+
+    .log {
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      max-height: 300px;
+      overflow: auto;
+      display: grid;
+      gap: 6px;
+      padding-right: 2px;
+    }
+    .log .item {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(0,0,0,0.22);
+      color: #c5d5e0;
+      animation: nodeIn .3s ease both;
+    }
+    .log .item.ok { border-color: rgba(62, 224, 200, 0.28); }
+    .log .item.warn { border-color: rgba(255, 176, 32, 0.35); color: #ffe0a3; }
+    .log .item.bad { border-color: rgba(255, 93, 122, 0.35); color: #ffc0cc; }
+
+    .footer-note {
+      margin: 14px 2px 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.55;
+    }
+    .footer-note code {
+      font-family: var(--mono);
+      color: #c7e7e1;
+      background: rgba(62, 224, 200, 0.08);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    /* custom scrollbar */
+    .log::-webkit-scrollbar { width: 8px; }
+    .log::-webkit-scrollbar-thumb {
+      background: rgba(140, 175, 195, 0.25);
+      border-radius: 999px;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-layer" aria-hidden="true">
+    <div class="bg-orb a"></div>
+    <div class="bg-orb b"></div>
+  </div>
+
+  <div class="app">
+    <header class="top">
+      <section class="brand-panel">
+        <div class="brand-kicker"><i></i> Ascend Inference · Load Aware</div>
+        <h1 class="brand-title"><span>MUTT</span></h1>
+        <p class="brand-sub">Multi-signal Unified Traffic Tuner — 动态权重、热点避让与平滑迁移的实时观测台。</p>
+      </section>
+
+      <section class="control-panel">
+        <div class="control-row">
+          <label class="field"><span>Admin URL</span>
+            <input id="adminUrl" type="text" value="" placeholder="http://127.0.0.1:8181" />
+          </label>
+          <label class="field" style="flex:0.55"><span>Pool</span>
+            <select id="poolSelect"><option value="">auto</option></select>
+          </label>
+          <label class="field" style="flex:0.45"><span>Refresh</span>
+            <select id="intervalSelect">
+              <option value="500">0.5s</option>
+              <option value="1000" selected>1s</option>
+              <option value="2000">2s</option>
+            </select>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button id="btnLive" class="primary">连接 Live</button>
+          <button id="btnOffline">离线演示</button>
+          <span class="mode-pill"><span id="modeDot" class="status-dot"></span><span id="modeText">connecting…</span></span>
+        </div>
+      </section>
+    </header>
+
+    <section class="kpi-row">
+      <div class="kpi">
+        <div class="label">连接状态</div>
+        <div class="value" id="kpiLink">—</div>
+        <div class="hint" id="kpiTime">等待数据</div>
+      </div>
+      <div class="kpi">
+        <div class="label">后端数量</div>
+        <div class="value" id="kpiBackends">0</div>
+        <div class="hint">当前资源池</div>
+      </div>
+      <div class="kpi">
+        <div class="label">热点节点</div>
+        <div class="value" id="kpiHot">—</div>
+        <div class="hint">utilization ≥ 0.85</div>
+      </div>
+      <div class="kpi">
+        <div class="label">总 Inflight</div>
+        <div class="value" id="kpiInflight">0</div>
+        <div class="hint">进行中请求合计</div>
+      </div>
+    </section>
+
+    <section class="panel actions-panel">
+      <div class="panel-head">
+        <h2>现场操作</h2>
+        <small>仅 Live · 调用已有 Admin API</small>
+      </div>
+      <div class="actions">
+        <button id="btnCapDown" class="warn" disabled>capacity → 1</button>
+        <button id="btnCapUp" disabled>capacity → 10</button>
+        <button id="btnUnhealthy" class="danger" disabled>标记不健康</button>
+        <button id="btnHealthy" disabled>标记健康</button>
+        <label class="field">
+          <span>目标后端</span>
+          <select id="backendSelect" disabled><option value="">—</option></select>
+        </label>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>NPU / Backend</h2>
+          <small>weight share · remote utilization</small>
+        </div>
+        <div id="nodes" class="nodes"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Weight Share</h2>
+          <small>by effective_weight</small>
+        </div>
+        <div id="shares" class="share-list"></div>
+        <div class="panel-head" style="margin-top:20px">
+          <h2>Event Log</h2>
+          <small>live actions</small>
+        </div>
+        <div id="log" class="log"></div>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      兼容 <code>GET /admin/state</code>、<code>POST /admin/capacity</code>、<code>POST /admin/health</code>。
+      条形图为 <strong>effective_weight 份额</strong>；热点用 <strong>remote_utilization</strong> 高亮。
+      P2C 选路还会比较 loadScore，实测请求占比可能比权重份额更激进地避开热点。
+      无 NPU 时可使用「离线演示」。
+    </p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = {
+      mode: "idle",
+      timer: null,
+      selectedBackend: "",
+      selectedPool: "",
+      lastState: null,
+      offlineStep: 0,
+      offlineTimer: null,
+    };
+
+    function defaultAdminUrl() {
+      const params = new URLSearchParams(location.search);
+      if (params.get("admin")) return params.get("admin");
+      if (location.protocol.startsWith("http")) return location.origin;
+      return "http://127.0.0.1:8181";
+    }
+    $("adminUrl").value = defaultAdminUrl();
+
+    function log(msg, level = "ok") {
+      const el = document.createElement("div");
+      el.className = `item ${level}`;
+      el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      const box = $("log");
+      box.prepend(el);
+      while (box.children.length > 80) box.removeChild(box.lastChild);
+    }
+
+    function fmt(n, digits = 2) {
+      if (n == null || Number.isNaN(n)) return "—";
+      return Number(n).toFixed(digits);
+    }
+    function pct(n) { return `${(n * 100).toFixed(1)}%`; }
+    function isHot(b) { return (b.remote_utilization || 0) >= 0.85; }
+    function isDown(b) {
+      return !b.healthy || b.passive_ejected || b.phase === "drained" ||
+        (b.phase === "draining" && (b.effective_weight || 0) < 0.2);
+    }
+
+    function pickPool(data) {
+      const pools = data.pools || [];
+      if (!pools.length) return null;
+      const wanted = $("poolSelect").value || state.selectedPool;
+      return pools.find((p) => p.name === wanted) || pools[0];
+    }
+
+    function refreshPoolOptions(data) {
+      const sel = $("poolSelect");
+      const prev = sel.value;
+      const names = (data.pools || []).map((p) => p.name);
+      sel.innerHTML = "";
+      names.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      });
+      if (names.includes(prev)) sel.value = prev;
+      else if (names.length) sel.value = names[0];
+    }
+
+    function refreshBackendOptions(pool) {
+      const sel = $("backendSelect");
+      const prev = state.selectedBackend || sel.value;
+      const backends = (pool && pool.backends) || [];
+      sel.innerHTML = "";
+      backends.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.id;
+        opt.textContent = b.id;
+        sel.appendChild(opt);
+      });
+      if (backends.some((b) => b.id === prev)) sel.value = prev;
+      else if (backends.length) sel.value = backends[0].id;
+      state.selectedBackend = sel.value;
+    }
+
+    function setLiveControls(enabled) {
+      ["btnCapDown", "btnCapUp", "btnUnhealthy", "btnHealthy", "backendSelect"].forEach((id) => {
+        $(id).disabled = !enabled;
+      });
+    }
+
+    function shortNpu(id) {
+      const m = String(id).match(/npu(\d+)/i);
+      return m ? `NPU${m[1]}` : id;
+    }
+
+    function render(data) {
+      state.lastState = data;
+      refreshPoolOptions(data);
+      const pool = pickPool(data);
+      if (!pool) {
+        $("nodes").innerHTML = "<div class='footer-note'>无 pool 数据</div>";
+        return;
+      }
+      refreshBackendOptions(pool);
+      const backends = pool.backends || [];
+      const totalW = backends.reduce((s, b) => s + Math.max(0, b.effective_weight || 0), 0) || 1;
+      const totalInflight = backends.reduce((s, b) => s + (b.inflight || 0), 0);
+      const hot = backends.filter(isHot);
+
+      $("kpiBackends").textContent = String(backends.length);
+      $("kpiInflight").textContent = String(totalInflight);
+      $("kpiHot").textContent = hot.length ? hot.map((b) => shortNpu(b.id)).join(", ") : "无";
+      $("kpiTime").textContent = data.time ? `state @ ${new Date(data.time).toLocaleTimeString()}` : "no timestamp";
+
+      $("nodes").innerHTML = backends.map((b, idx) => {
+        const share = Math.max(0, b.effective_weight || 0) / totalW;
+        const util = Math.min(1, Math.max(0, b.remote_utilization || 0));
+        const cls = isDown(b) ? "down" : (isHot(b) ? "hot" : "");
+        return `
+          <article class="node ${cls}" style="animation-delay:${idx * 0.04}s">
+            <div class="node-top">
+              <div class="node-id-wrap">
+                <div class="node-id">${b.id}</div>
+                <div class="node-url">${b.url || ""}</div>
+              </div>
+              <div class="badges">
+                <span class="badge ${b.phase || ""}">${b.phase || "unknown"}</span>
+                <span class="badge">${b.healthy ? "healthy" : "unhealthy"}</span>
+                ${b.passive_ejected ? '<span class="badge drained">ejected</span>' : ""}
+                ${b.failure_cooling_off ? '<span class="badge recovering">cooloff</span>' : ""}
+              </div>
+            </div>
+            <div class="metrics">
+              <div class="metric"><div class="k">capacity</div><div class="v">${fmt(b.capacity, 0)}</div></div>
+              <div class="metric"><div class="k">desired / eff</div><div class="v">${fmt(b.desired_weight)} / ${fmt(b.effective_weight)}</div></div>
+              <div class="metric"><div class="k">inflight</div><div class="v">${b.inflight || 0}/${b.max_inflight || 0}</div></div>
+              <div class="metric"><div class="k">latency</div><div class="v">${fmt(b.latency_ewma_ms, 0)}ms</div></div>
+            </div>
+            <div class="bars">
+              <div>
+                <div class="bar-label"><span>weight share</span><b>${pct(share)}</b></div>
+                <div class="bar"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
+              </div>
+              <div>
+                <div class="bar-label"><span>remote utilization</span><b>${pct(util)}</b></div>
+                <div class="bar util"><i style="width:${(util * 100).toFixed(1)}%"></i></div>
+              </div>
+            </div>
+            ${b.last_error ? `<div class="footer-note" style="margin-top:10px;color:#ffb0bf">${b.last_error}</div>` : ""}
+          </article>`;
+      }).join("");
+
+      $("shares").innerHTML = backends
+        .slice()
+        .sort((a, b) => (b.effective_weight || 0) - (a.effective_weight || 0))
+        .map((b, idx) => {
+          const share = Math.max(0, b.effective_weight || 0) / totalW;
+          return `
+            <div class="share-row" style="animation:nodeIn .4s ease both;animation-delay:${idx * 0.04}s">
+              <div class="name"><span>${b.id}</span><span>${pct(share)} · w=${fmt(b.effective_weight)}</span></div>
+              <div class="share-track"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
+            </div>`;
+        }).join("");
+    }
+
+    async function fetchLive() {
+      const base = $("adminUrl").value.replace(/\/$/, "");
+      const resp = await fetch(`${base}/admin/state`, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.json();
+    }
+
+    async function postJSON(path, body) {
+      const base = $("adminUrl").value.replace(/\/$/, "");
+      const resp = await fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
+      return resp.json();
+    }
+
+    function setMode(mode, ok, detail) {
+      state.mode = mode;
+      $("modeDot").className = `status-dot ${ok ? "ok" : (mode === "idle" ? "" : "bad")}`;
+      $("modeText").textContent = detail;
+      $("kpiLink").textContent = mode === "live" ? "LIVE" : (mode === "offline" ? "OFFLINE" : "IDLE");
+      setLiveControls(mode === "live");
+    }
+
+    function stopTimers() {
+      if (state.timer) clearInterval(state.timer);
+      if (state.offlineTimer) clearInterval(state.offlineTimer);
+      state.timer = null;
+      state.offlineTimer = null;
+    }
+
+    async function tickLive() {
+      try {
+        const data = await fetchLive();
+        render(data);
+        setMode("live", true, `live · ${$("adminUrl").value}`);
+      } catch (err) {
+        setMode("live", false, "live error");
+        $("kpiLink").textContent = "ERROR";
+        log(`拉取 /admin/state 失败: ${err.message}`, "bad");
+      }
+    }
+
+    function startLive() {
+      stopTimers();
+      log(`连接 ${$("adminUrl").value}`, "ok");
+      tickLive();
+      state.timer = setInterval(tickLive, Number($("intervalSelect").value || 1000));
+    }
+
+    function makeBackend(partial) {
+      return Object.assign({
+        url: "http://127.0.0.1:9021",
+        phase: "active",
+        phase_since: new Date().toISOString(),
+        slow_start_progress: 1,
+        capacity: 10,
+        desired_weight: 10,
+        effective_weight: 10,
+        healthy: true,
+        passive_ejected: false,
+        failure_cooling_off: false,
+        inflight: 4,
+        max_inflight: 64,
+        remote_utilization: 0.05,
+        queue_depth: 0,
+        kv_cache_usage: 0.01,
+        latency_ewma_ms: 120,
+        consecutive_failures: 0,
+        last_updated: new Date().toISOString(),
+      }, partial);
+    }
+
+    const OFFLINE_SCENES = [
+      {
+        title: "均衡基线（类 exp1）",
+        level: "ok",
+        state: {
+          time: new Date().toISOString(),
+          pools: [{
+            name: "default",
+            backends: [3, 4, 5, 6, 7].map((n, i) => makeBackend({
+              id: `qwen15b-npu${n}`,
+              url: `http://127.0.0.1:902${i + 1}`,
+              effective_weight: 9.7 + i * 0.02,
+              desired_weight: 9.8,
+              inflight: 5 + (i % 3),
+              remote_utilization: 0.04 + i * 0.01,
+            })),
+          }],
+        },
+      },
+      {
+        title: "热点感知（类 exp2，NPU3 util→1）",
+        level: "warn",
+        state: {
+          time: new Date().toISOString(),
+          pools: [{
+            name: "default",
+            backends: [
+              makeBackend({
+                id: "qwen15b-npu3", remote_utilization: 1, desired_weight: 6.43,
+                effective_weight: 6.43, latency_ewma_ms: 137, kv_cache_usage: 0.0115, inflight: 0,
+              }),
+              makeBackend({ id: "qwen15b-npu4", effective_weight: 9.79, desired_weight: 9.94, remote_utilization: 0.005 }),
+              makeBackend({ id: "qwen15b-npu5", effective_weight: 9.80, desired_weight: 9.94, remote_utilization: 0.004 }),
+              makeBackend({ id: "qwen15b-npu6", effective_weight: 9.81, desired_weight: 9.93, remote_utilization: 0.004 }),
+              makeBackend({ id: "qwen15b-npu7", effective_weight: 9.82, desired_weight: 9.94, remote_utilization: 0.003 }),
+            ],
+          }],
+        },
+      },
+      {
+        title: "平滑降容（类 exp3，capacity 10→1）",
+        level: "warn",
+        state: {
+          time: new Date().toISOString(),
+          pools: [{
+            name: "default",
+            backends: [
+              makeBackend({
+                id: "qwen15b-npu3", capacity: 1, desired_weight: 0.996,
+                effective_weight: 0.956, inflight: 1, remote_utilization: 0,
+              }),
+              makeBackend({ id: "qwen15b-npu4", effective_weight: 9.72, desired_weight: 9.73, inflight: 7 }),
+              makeBackend({ id: "qwen15b-npu5", effective_weight: 9.75, desired_weight: 9.76, inflight: 6 }),
+              makeBackend({ id: "qwen15b-npu6", effective_weight: 9.70, desired_weight: 9.71, inflight: 8 }),
+              makeBackend({ id: "qwen15b-npu7", effective_weight: 9.74, desired_weight: 9.75, inflight: 7 }),
+            ],
+          }],
+        },
+      },
+      {
+        title: "故障摘除（类 exp4，NPU5 draining）",
+        level: "bad",
+        state: {
+          time: new Date().toISOString(),
+          pools: [{
+            name: "default",
+            backends: [
+              makeBackend({ id: "qwen15b-npu3", effective_weight: 9.72, inflight: 6 }),
+              makeBackend({ id: "qwen15b-npu4", effective_weight: 9.74, inflight: 7 }),
+              makeBackend({
+                id: "qwen15b-npu5", phase: "draining", healthy: false, passive_ejected: true,
+                desired_weight: 0, effective_weight: 0.1, inflight: 0, latency_ewma_ms: 4464,
+                consecutive_failures: 3, last_error: "metrics scrape: connection refused",
+              }),
+              makeBackend({ id: "qwen15b-npu6", effective_weight: 9.80, inflight: 8 }),
+              makeBackend({ id: "qwen15b-npu7", effective_weight: 9.78, inflight: 7 }),
+            ],
+          }],
+        },
+      },
+      {
+        title: "恢复回流（recovering slow-start）",
+        level: "ok",
+        state: {
+          time: new Date().toISOString(),
+          pools: [{
+            name: "default",
+            backends: [
+              makeBackend({ id: "qwen15b-npu3", effective_weight: 9.5, inflight: 5 }),
+              makeBackend({ id: "qwen15b-npu4", effective_weight: 9.6, inflight: 5 }),
+              makeBackend({
+                id: "qwen15b-npu5", phase: "recovering", slow_start_progress: 0.35,
+                desired_weight: 9.2, effective_weight: 3.2, inflight: 2, remote_utilization: 0.08,
+              }),
+              makeBackend({ id: "qwen15b-npu6", effective_weight: 9.4, inflight: 5 }),
+              makeBackend({ id: "qwen15b-npu7", effective_weight: 9.5, inflight: 4 }),
+            ],
+          }],
+        },
+      },
+    ];
+
+    function startOffline() {
+      stopTimers();
+      state.offlineStep = 0;
+      const play = () => {
+        const scene = OFFLINE_SCENES[state.offlineStep % OFFLINE_SCENES.length];
+        render(scene.state);
+        setMode("offline", true, "offline demo");
+        log(`离线场景: ${scene.title}`, scene.level);
+        state.offlineStep += 1;
+      };
+      play();
+      state.offlineTimer = setInterval(play, 3500);
+    }
+
+    async function actCapacity(capacity) {
+      const pool = $("poolSelect").value || "default";
+      const backend = $("backendSelect").value;
+      if (!backend) return;
+      try {
+        await postJSON("/admin/capacity", { pool, backend, capacity });
+        log(`capacity ${backend} -> ${capacity}`, "warn");
+        await tickLive();
+      } catch (err) {
+        log(`capacity 失败: ${err.message}`, "bad");
+      }
+    }
+
+    async function actHealth(healthy) {
+      const pool = $("poolSelect").value || "default";
+      const backend = $("backendSelect").value;
+      if (!backend) return;
+      try {
+        await postJSON("/admin/health", { pool, backend, healthy });
+        log(`health ${backend} -> ${healthy}`, healthy ? "ok" : "bad");
+        await tickLive();
+      } catch (err) {
+        log(`health 失败: ${err.message}`, "bad");
+      }
+    }
+
+    $("btnLive").addEventListener("click", startLive);
+    $("btnOffline").addEventListener("click", startOffline);
+    $("btnCapDown").addEventListener("click", () => actCapacity(1));
+    $("btnCapUp").addEventListener("click", () => actCapacity(10));
+    $("btnUnhealthy").addEventListener("click", () => actHealth(false));
+    $("btnHealthy").addEventListener("click", () => actHealth(true));
+    $("backendSelect").addEventListener("change", (e) => { state.selectedBackend = e.target.value; });
+    $("intervalSelect").addEventListener("change", () => { if (state.mode === "live") startLive(); });
+
+    if (location.protocol.startsWith("http")) {
+      startLive();
+    } else {
+      setMode("idle", false, "选择 Live 或离线演示");
+      log("本地 file:// 打开时请填写 Admin URL 后点「连接 Live」，或先点「离线演示」预演", "warn");
+    }
+  </script>
+</body>
+</html>

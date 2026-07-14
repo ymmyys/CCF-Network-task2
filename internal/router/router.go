@@ -116,7 +116,10 @@ func (rt *Router) AdminHandler() http.Handler {
 	mux.HandleFunc("/admin/capacity", rt.handleCapacityUpdate)
 	mux.HandleFunc("/admin/health", rt.handleHealthUpdate)
 	mux.HandleFunc("/metrics", rt.handleMetrics)
-	return mux
+	mux.HandleFunc("/demo", rt.handleDemo)
+	mux.HandleFunc("/demo/", rt.handleDemo)
+	mux.HandleFunc("/", rt.handleDemoRedirect)
+	return withCORS(mux)
 }
 
 func (rt *Router) pick(pool *Pool) (*Backend, error) {
