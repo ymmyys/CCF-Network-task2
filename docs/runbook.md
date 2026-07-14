@@ -36,6 +36,16 @@ yijq27-vllm-qwen15b-6  -> NPU 6, port 9027
 yijq27-vllm-qwen15b-7  -> NPU 7, port 9028
 ```
 
+8 卡现场演示会额外启动：
+
+```text
+yijq27-vllm-qwen15b-0  -> NPU 0, port 9018
+yijq27-vllm-qwen15b-1  -> NPU 1, port 9019
+yijq27-vllm-qwen15b-2  -> NPU 2, port 9020
+```
+
+对应 Router 配置为 `config/router.qwen15b-8backends-p2c.json`。正式实验结果仍以 NPU 3-7 的既有数据为准，8 卡配置用于现场扩展演示和吞吐测试。
+
 7B 泛化实验会临时使用：
 
 ```text
@@ -50,7 +60,7 @@ yijq27-vllm-qwen7b-7  -> NPU 7, port 9128
 
 ## 2. 安全规则
 
-- 先看 `npu-smi info`，确认 NPU 3-7 没有非本项目任务。
+- 先看 `npu-smi info`，确认本次要使用的 NPU 没有非本项目任务；8 卡演示必须确认 NPU 0-7 均可用。
 - 不要停止未知容器，不要杀未知进程。
 - 正式故障实验只允许操作 `yijq27-vllm-qwen15b-5`。
 - exp8 只允许创建和删除 `yijq27-vllm-qwen7b-3` 到 `yijq27-vllm-qwen7b-7`。
@@ -219,6 +229,9 @@ docker run -itd \
 端口映射：
 
 ```text
+NPU 0 -> 9018
+NPU 1 -> 9019
+NPU 2 -> 9020
 NPU 3 -> 9021
 NPU 4 -> 9022
 NPU 5 -> 9026
@@ -229,7 +242,7 @@ NPU 7 -> 9028
 健康检查：
 
 ```bash
-for p in 9021 9022 9026 9027 9028; do
+for p in 9018 9019 9020 9021 9022 9026 9027 9028; do
   printf "%s " "$p"
   curl -fsS http://127.0.0.1:$p/health >/dev/null && echo ok || echo fail
 done
@@ -239,6 +252,23 @@ done
 
 ```bash
 curl -fsS http://127.0.0.1:9021/v1/models
+```
+
+8 卡后端全部健康后，使用独立配置启动 MUTT：
+
+```bash
+/workspace/bin/mutt -config config/router.qwen15b-8backends-p2c.json
+```
+
+通过 `http://127.0.0.1:8181/admin/state` 或 Live Console 确认 `backends=8` 且全部 `healthy=true`。8 卡演示结束后，如需恢复正式 5 卡环境，只停止本项目新增的三个容器，再用原 5 卡配置重启 MUTT：
+
+```bash
+docker stop \
+  yijq27-vllm-qwen15b-0 \
+  yijq27-vllm-qwen15b-1 \
+  yijq27-vllm-qwen15b-2
+
+/workspace/bin/mutt -config config/router.qwen15b-5backends-p2c.json
 ```
 
 ### 7B 临时后端
