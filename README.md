@@ -29,7 +29,8 @@ client
   v
 MUTT (:8180 data, :8181 admin)
   |-- pool=default  -> qwen15b-npu3/4/5/6/7（正式实验）
-  |                  -> qwen15b-npu0..7（8 卡现场演示）
+  |                  -> qwen15b-npu0..7（8×1.5B 现场演示）
+  |                  -> qwen7b-npu0..7（8×7B 现场演示）
   |-- pool=isolated -> configured isolated real NPU pool
   |
   v
@@ -62,7 +63,7 @@ docker exec yijq27-cann851 bash -lc '
 
 完整操作手册见 [`docs/runbook.md`](docs/runbook.md)，文档索引见 [`docs/README.md`](docs/README.md)。
 
-8 卡现场演示使用 `config/router.qwen15b-8backends-p2c.json`，端口映射和安全清理命令见操作手册；该配置不替换既有 5 卡正式实验数据。
+8 卡现场演示可使用 `config/router.qwen15b-8backends-p2c.json` 或 `config/router.qwen7b-8backends-p2c.json`，端口映射和安全清理命令见操作手册；这些配置不替换既有 5 卡正式实验数据。
 
 ## 现场可视化（Live Console）
 

@@ -333,6 +333,19 @@ for p in 9121 9122 9126 9127 9128; do
 done
 ```
 
+### 8×7B 现场演示
+
+8 卡演示使用上方相同的完整 `docker run` 循环，只需将端口表替换为 `0:9118 1:9119 2:9120 3:9121 4:9122 5:9126 6:9127 7:9128`。
+
+全部健康后使用：
+
+```bash
+/workspace/bin/mutt -config config/router.qwen7b-8backends-p2c.json
+curl -fsS http://127.0.0.1:8181/admin/state
+```
+
+8×7B 会占用全部 NPU；当前实测每张卡约 53 GB 进程显存、56.5 GB HBM 总占用。切换前必须停止本项目原有 1.5B 容器，并再次用 `npu-smi info` 确认没有其他任务。当前验证使用 Qwen2.5-7B-Instruct、单卡单实例，不是一个模型的 8 卡张量并行。
+
 ## 7. 运行正式实验
 
 一键完整重跑：
@@ -384,6 +397,20 @@ docker rm -f \
   yijq27-vllm-qwen7b-5 \
   yijq27-vllm-qwen7b-6 \
   yijq27-vllm-qwen7b-7 2>/dev/null || true
+```
+
+如运行过 8×7B 现场演示，清理时还需包含新增的 0-2 号容器；只操作以下精确名称：
+
+```bash
+docker rm -f \
+  yijq27-vllm-qwen7b-0 \
+  yijq27-vllm-qwen7b-1 \
+  yijq27-vllm-qwen7b-2 \
+  yijq27-vllm-qwen7b-3 \
+  yijq27-vllm-qwen7b-4 \
+  yijq27-vllm-qwen7b-5 \
+  yijq27-vllm-qwen7b-6 \
+  yijq27-vllm-qwen7b-7
 ```
 
 ## 8. 结果文件

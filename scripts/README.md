@@ -57,6 +57,8 @@ yijq27-vllm-qwen15b-7 -> 9028
 
 8 卡现场演示额外使用 `yijq27-vllm-qwen15b-0/1/2`（端口 `9018/9019/9020`），Router 配置为 `config/router.qwen15b-8backends-p2c.json`。这些新增容器不属于既有正式实验脚本的默认资源集合。
 
+8×7B 现场演示使用 `yijq27-vllm-qwen7b-0..7`，端口为 `9118/9119/9120/9121/9122/9126/9127/9128`，Router 配置为 `config/router.qwen7b-8backends-p2c.json`。既有 exp8 脚本仍默认使用 NPU3-7，不自动占用 NPU0-2。
+
 exp8 会临时使用 Qwen2.5-7B 后端：
 
 ```text
