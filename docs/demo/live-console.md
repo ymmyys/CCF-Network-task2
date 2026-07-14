@@ -30,6 +30,7 @@ python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 878
 |---|---|
 | **连接 Live** | 轮询 `GET /admin/state`，展示 phase / transition_reason / capacity / desired·effective weight / inflight / remote_utilization / selected_total |
 | **现场按钮** | `POST /admin/capacity`、`POST /admin/health`（平滑降容、持久人工摘除与恢复） |
+| **请求注入** | `POST /admin/load` 启动受控推理请求，`GET /admin/load` 查看进度，`DELETE /admin/load` 停止任务 |
 | **离线演示** | 无 NPU 时也能预演热点 / 降容 / 故障 / 恢复场景 |
 
 ## 兼容性说明
@@ -41,6 +42,7 @@ python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 878
 - 权重条采用集群统一绝对刻度：实心条是 `effective_weight`，白色竖线是 `desired_weight`，文字同时显示 `capacity` 与归一化 dispatch share。百分比只用于说明相对份额，不再单独承担权重可视化。
 - 「Traffic Redistribution」使用 100% 堆叠条展示计划份额如何从降权节点迁移到其他节点；每次现场操作前自动记录比较基线，并用百分点标出各节点承接或释放的份额。
 - `selected_total` 是 Router 对后端的累计选中次数。页面对相邻刷新快照做差，生成“实际路由 / 刷新窗口”请求数与占比；无请求时明确显示 `0 req`，不把计划权重冒充实际流量。
+- 请求注入器只访问当前 Router 配置的本机数据面 `/v1/chat/completions`，不接受目标 URL。单次任务限制为最多 500 请求、并发 32、`max_tokens` 128；同一时间只运行一个任务，可在页面停止。
 - 同一 origin 访问时无跨域问题；admin 面已加 CORS，便于调试。
 - 可视化展示的是 **effective_weight 份额** 与 **remote_utilization**；P2C 选路还会比较 loadScore，实测请求占比可能更激进地避开热点——页面底部有说明，答辩时可主动讲清。
 

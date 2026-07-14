@@ -12,9 +12,10 @@ import (
 )
 
 type Router struct {
-	cfg    Config
-	pools  map[string]*Pool
-	client *http.Client
+	cfg          Config
+	pools        map[string]*Pool
+	client       *http.Client
+	loadInjector *loadInjector
 }
 
 type State struct {
@@ -41,8 +42,9 @@ func New(cfg Config) (*Router, error) {
 	}
 
 	rt := &Router{
-		cfg:   cfg,
-		pools: make(map[string]*Pool, len(cfg.Pools)),
+		cfg:          cfg,
+		pools:        make(map[string]*Pool, len(cfg.Pools)),
+		loadInjector: newLoadInjector(dataPlaneCompletionEndpoint(cfg.Listen), cfg.PoolHeader),
 		client: &http.Client{
 			Timeout: cfg.ProbeTimeout.Duration,
 		},
@@ -115,6 +117,7 @@ func (rt *Router) AdminHandler() http.Handler {
 	mux.HandleFunc("/admin/state", rt.handleState)
 	mux.HandleFunc("/admin/capacity", rt.handleCapacityUpdate)
 	mux.HandleFunc("/admin/health", rt.handleHealthUpdate)
+	mux.HandleFunc("/admin/load", rt.handleLoadInjection)
 	mux.HandleFunc("/metrics", rt.handleMetrics)
 	mux.HandleFunc("/demo", rt.handleDemo)
 	mux.HandleFunc("/demo/", rt.handleDemo)
@@ -229,6 +232,36 @@ func (rt *Router) handleHealthUpdate(w http.ResponseWriter, req *http.Request) {
 	backend.setAdminHealth(body.Healthy)
 	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
 	writeJSON(w, backend.state(time.Now()))
+}
+
+func (rt *Router) handleLoadInjection(w http.ResponseWriter, req *http.Request) {
+	switch req.Method {
+	case http.MethodGet:
+		writeJSON(w, rt.loadInjector.snapshot())
+	case http.MethodDelete:
+		writeJSON(w, rt.loadInjector.stop())
+	case http.MethodPost:
+		var body loadInjectionRequest
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Pool == "" {
+			body.Pool = rt.cfg.DefaultPool
+		}
+		if _, ok := rt.pools[body.Pool]; !ok {
+			http.Error(w, "pool not found", http.StatusNotFound)
+			return
+		}
+		state, err := rt.loadInjector.start(body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, state)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (rt *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {

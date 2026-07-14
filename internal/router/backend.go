@@ -162,7 +162,9 @@ func newReverseProxy(target *url.URL, preserveHost bool, backend *Backend) *http
 		},
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
-			backend.markFailure(fmt.Sprintf("proxy error: %v", err))
+			if shouldMarkProxyFailure(req, err) {
+				backend.markFailure(fmt.Sprintf("proxy error: %v", err))
+			}
 			http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		},
 		ModifyResponse: func(resp *http.Response) error {
@@ -175,6 +177,10 @@ func newReverseProxy(target *url.URL, preserveHost bool, backend *Backend) *http
 		},
 	}
 	return proxy
+}
+
+func shouldMarkProxyFailure(req *http.Request, err error) bool {
+	return req.Context().Err() == nil && !errors.Is(err, context.Canceled)
 }
 
 func rewriteRequestURL(req *http.Request, target *url.URL) {

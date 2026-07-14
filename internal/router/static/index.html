@@ -198,7 +198,7 @@
       text-transform: uppercase;
       font-weight: 600;
     }
-    input[type="text"], select {
+    input[type="text"], input[type="number"], select {
       width: 100%;
       appearance: none;
       background: rgba(7, 14, 20, 0.72);
@@ -210,7 +210,7 @@
       outline: none;
       transition: border-color .15s, box-shadow .15s;
     }
-    input[type="text"]:focus, select:focus {
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
       border-color: rgba(62, 224, 200, 0.55);
       box-shadow: 0 0 0 3px rgba(62, 224, 200, 0.12);
     }
@@ -379,6 +379,49 @@
       align-items: end;
     }
     .actions .field { flex: 0 1 180px; min-width: 160px; }
+    .inject-panel { margin-bottom: 14px; }
+    .inject-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.4fr) minmax(260px, 2fr) repeat(3, minmax(90px, 0.55fr)) auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .inject-buttons { display: flex; gap: 8px; }
+    .load-status {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .load-track {
+      height: 9px;
+      overflow: hidden;
+      border: 1px solid rgba(140, 175, 195, 0.15);
+      border-radius: 999px;
+      background: rgba(0,0,0,0.4);
+    }
+    .load-track > i {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--teal), #5aa7ff);
+      transition: width .35s ease;
+    }
+    .load-status-text {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      white-space: nowrap;
+    }
+    @media (max-width: 1050px) {
+      .inject-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .inject-buttons { grid-column: 1 / -1; }
+    }
+    @media (max-width: 620px) {
+      .inject-grid { grid-template-columns: 1fr; }
+      .inject-buttons { grid-column: auto; }
+    }
 
     .nodes {
       display: grid;
@@ -750,6 +793,38 @@
       </div>
     </section>
 
+    <section class="panel inject-panel">
+      <div class="panel-head">
+        <h2>请求注入</h2>
+        <small>仅调用当前 Router 数据面 · 受控并发</small>
+      </div>
+      <div class="inject-grid">
+        <label class="field"><span>模型</span>
+          <input id="injectModel" type="text" value="qwen2.5-7b-instruct" maxlength="200" />
+        </label>
+        <label class="field"><span>Prompt</span>
+          <input id="injectPrompt" type="text" value="用一句话解释动态负载均衡。" maxlength="4000" />
+        </label>
+        <label class="field"><span>请求数</span>
+          <input id="injectRequests" type="number" value="80" min="1" max="500" step="1" />
+        </label>
+        <label class="field"><span>并发</span>
+          <input id="injectConcurrency" type="number" value="8" min="1" max="32" step="1" />
+        </label>
+        <label class="field"><span>Max tokens</span>
+          <input id="injectMaxTokens" type="number" value="32" min="1" max="128" step="1" />
+        </label>
+        <div class="inject-buttons">
+          <button id="btnInjectStart" class="primary" disabled>▶ 注入</button>
+          <button id="btnInjectStop" class="danger" disabled>■ 停止</button>
+        </div>
+      </div>
+      <div class="load-status">
+        <div class="load-track"><i id="loadProgress"></i></div>
+        <div id="loadStatusText" class="load-status-text">idle</div>
+      </div>
+    </section>
+
     <section class="grid-2">
       <div class="panel">
         <div class="panel-head">
@@ -799,6 +874,7 @@
       fetching: false,
       shareBaseline: null,
       selectedCounters: new Map(),
+      loadState: null,
     };
 
     function defaultAdminUrl() {
@@ -871,6 +947,11 @@
       ["btnCapDown", "btnCapUp", "btnUnhealthy", "btnHealthy", "backendSelect"].forEach((id) => {
         $(id).disabled = !enabled;
       });
+      ["injectModel", "injectPrompt", "injectRequests", "injectConcurrency", "injectMaxTokens"].forEach((id) => {
+        $(id).disabled = !enabled || Boolean(state.loadState?.running);
+      });
+      $("btnInjectStart").disabled = !enabled || Boolean(state.loadState?.running);
+      $("btnInjectStop").disabled = !enabled || !state.loadState?.running;
     }
 
     function shortNpu(id) {
@@ -1043,6 +1124,8 @@
     }
 
     function renderAllocationStrip(backends, totalWeight, baselineShares) {
+      const deltaEpsilon = 0.002;
+      const nodeDeltaEpsilon = deltaEpsilon / Math.max(1, backends.length);
       const container = $("allocationStrip");
       const existing = new Map(Array.from(container.children, (segment) =>
         [segment.dataset.backendId, segment]));
@@ -1058,10 +1141,10 @@
         const delta = share - (baselineShares.get(backend.id) || 0);
         if (delta < 0) {
           released += -delta;
-          if (delta < -0.0005) releasing.push(backend.id);
+          if (delta < -nodeDeltaEpsilon) releasing.push(backend.id);
         } else if (delta > 0) {
           received += delta;
-          if (delta > 0.0005) receiving.push(backend.id);
+          if (delta > nodeDeltaEpsilon) receiving.push(backend.id);
         }
         let segment = existing.get(backend.id);
         if (!segment) {
@@ -1077,7 +1160,7 @@
       });
 
       setText($("allocationTotal"), `${backends.length} nodes · 100%`);
-      if (released < 0.0005 && received < 0.0005) {
+      if (released < deltaEpsilon && received < deltaEpsilon) {
         setText($("allocationNote"), "当前计划份额与操作前基线一致");
       } else {
         const sourceText = releasing.length === 1
@@ -1179,6 +1262,13 @@
       return resp.json();
     }
 
+    async function fetchLoadState() {
+      const base = $("adminUrl").value.replace(/\/$/, "");
+      const resp = await fetch(`${base}/admin/load`, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.json();
+    }
+
     async function postJSON(path, body) {
       const base = $("adminUrl").value.replace(/\/$/, "");
       const resp = await fetch(`${base}${path}`, {
@@ -1191,6 +1281,33 @@
         throw new Error(text || `HTTP ${resp.status}`);
       }
       return resp.json();
+    }
+
+    async function deleteJSON(path) {
+      const base = $("adminUrl").value.replace(/\/$/, "");
+      const resp = await fetch(`${base}${path}`, { method: "DELETE" });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
+      return resp.json();
+    }
+
+    function renderLoadState(loadState) {
+      state.loadState = loadState;
+      const finished = (loadState?.completed || 0) + (loadState?.failed || 0);
+      const total = loadState?.total || 0;
+      const progress = total > 0 ? Math.min(1, finished / total) : 0;
+      $("loadProgress").style.width = `${(progress * 100).toFixed(1)}%`;
+      let text = "idle";
+      if (loadState?.id) {
+        text = loadState.running
+          ? `running #${loadState.id} · ${finished}/${total} · failed ${loadState.failed || 0}`
+          : `${loadState.canceled ? "stopped" : "done"} #${loadState.id} · ${loadState.completed || 0}/${total} · failed ${loadState.failed || 0}`;
+        if (loadState.last_error) text += ` · ${loadState.last_error}`;
+      }
+      setText($("loadStatusText"), text);
+      setLiveControls(state.mode === "live");
     }
 
     function setMode(mode, ok, detail) {
@@ -1212,8 +1329,9 @@
       if (state.fetching) return;
       state.fetching = true;
       try {
-        const data = await fetchLive();
+        const [data, loadState] = await Promise.all([fetchLive(), fetchLoadState()]);
         render(data);
+        renderLoadState(loadState);
         setMode("live", true, `live · ${$("adminUrl").value}`);
       } catch (err) {
         setMode("live", false, "live error");
@@ -1404,12 +1522,45 @@
       }
     }
 
+    async function actInject() {
+      const pool = $("poolSelect").value || "default";
+      const body = {
+        pool,
+        model: $("injectModel").value.trim(),
+        prompt: $("injectPrompt").value.trim(),
+        requests: Number($("injectRequests").value),
+        concurrency: Number($("injectConcurrency").value),
+        max_tokens: Number($("injectMaxTokens").value),
+      };
+      try {
+        captureShareBaseline(pool);
+        const loadState = await postJSON("/admin/load", body);
+        renderLoadState(loadState);
+        log(`注入 #${loadState.id}: ${body.requests} requests @ concurrency ${body.concurrency}`, "warn");
+        await tickLive();
+      } catch (err) {
+        log(`请求注入失败: ${err.message}`, "bad");
+      }
+    }
+
+    async function actStopInjection() {
+      try {
+        await deleteJSON("/admin/load");
+        log("已请求停止注入任务", "warn");
+        window.setTimeout(tickLive, 250);
+      } catch (err) {
+        log(`停止注入失败: ${err.message}`, "bad");
+      }
+    }
+
     $("btnLive").addEventListener("click", startLive);
     $("btnOffline").addEventListener("click", startOffline);
     $("btnCapDown").addEventListener("click", () => actCapacity(1));
     $("btnCapUp").addEventListener("click", () => actCapacity(10));
     $("btnUnhealthy").addEventListener("click", () => actHealth(false));
     $("btnHealthy").addEventListener("click", () => actHealth(true));
+    $("btnInjectStart").addEventListener("click", actInject);
+    $("btnInjectStop").addEventListener("click", actStopInjection);
     $("backendSelect").addEventListener("change", (e) => { state.selectedBackend = e.target.value; });
     $("poolSelect").addEventListener("change", (e) => {
       state.selectedPool = e.target.value;

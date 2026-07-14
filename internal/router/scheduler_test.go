@@ -1,8 +1,12 @@
 package router
 
 import (
+	"context"
+	"errors"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -435,6 +439,20 @@ func TestBackendSelectionCounter(t *testing.T) {
 	}
 	if state.Inflight != 0 {
 		t.Fatalf("inflight = %d, want 0", state.Inflight)
+	}
+}
+
+func TestClientCancellationDoesNotCountAsBackendFailure(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "http://router/v1/chat/completions", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+
+	if shouldMarkProxyFailure(req, context.Canceled) {
+		t.Fatal("client cancellation was classified as backend failure")
+	}
+	if !shouldMarkProxyFailure(httptest.NewRequest(http.MethodPost, "http://router/", nil), errors.New("connection refused")) {
+		t.Fatal("upstream connection failure was ignored")
 	}
 }
 
