@@ -87,7 +87,7 @@ MUTT 的技术路线分为四层：
 |---|---|
 | `GET /admin/state` | 查看每个 backend 的 phase、capacity、desired/effective weight、inflight 和远程负载 |
 | `POST /admin/capacity` | 动态修改节点 capacity，用于降容、扩容和赛题指定 10->1 场景 |
-| `POST /admin/health` | 手动切换节点健康状态，便于验证状态机和恢复过程 |
+| `POST /admin/health` | 设置或解除持久人工摘除；该状态独立于主动健康探测，恢复时进入 slow-start |
 | `GET /metrics` | 暴露 MUTT 自身 Prometheus 指标，供实验采集和可视化分析 |
 
 ## 4. 核心算法设计

@@ -48,6 +48,7 @@ type Backend struct {
 	desiredWeight       float64
 	effectiveWeight     float64
 	healthy             bool
+	adminDisabled       bool
 	phase               BackendPhase
 	phaseSince          time.Time
 	remoteUtilization   float64
@@ -73,6 +74,8 @@ type BackendState struct {
 	DesiredWeight       float64   `json:"desired_weight"`
 	EffectiveWeight     float64   `json:"effective_weight"`
 	Healthy             bool      `json:"healthy"`
+	ObservedHealthy     bool      `json:"observed_healthy"`
+	AdminDisabled       bool      `json:"admin_disabled"`
 	PassiveEjected      bool      `json:"passive_ejected"`
 	FailureCoolingOff   bool      `json:"failure_cooling_off"`
 	Inflight            int64     `json:"inflight"`
@@ -224,6 +227,7 @@ func (b *Backend) schedulingState(now time.Time) (float64, bool) {
 	b.mu.RLock()
 	weight := b.effectiveWeight
 	healthy := b.healthy
+	adminDisabled := b.adminDisabled
 	passiveUntil := b.passiveUntil
 	failureCooloffUntil := b.failureCooloffUntil
 	maxInflight := b.maxInflight
@@ -241,7 +245,7 @@ func (b *Backend) schedulingState(now time.Time) (float64, bool) {
 		return 0, false
 	}
 	// 健康检查失败或被动熔断中: 不可调度
-	if !healthy || now.Before(passiveUntil) {
+	if !healthy || adminDisabled || now.Before(passiveUntil) {
 		return 0, false
 	}
 	if now.Before(failureCooloffUntil) {
@@ -266,7 +270,9 @@ func (b *Backend) state(now time.Time) BackendState {
 		Capacity:            b.capacity,
 		DesiredWeight:       b.desiredWeight,
 		EffectiveWeight:     b.effectiveWeight,
-		Healthy:             b.healthy,
+		Healthy:             b.healthy && !b.adminDisabled,
+		ObservedHealthy:     b.healthy,
+		AdminDisabled:       b.adminDisabled,
 		PassiveEjected:      now.Before(b.passiveUntil),
 		FailureCoolingOff:   now.Before(b.failureCooloffUntil),
 		Inflight:            atomic.LoadInt64(&b.inflight),
@@ -295,7 +301,7 @@ func (b *Backend) setCapacity(capacity float64) error {
 	switch {
 	case capacity <= 0 || capacity < oldCapacity:
 		b.enterPhaseLocked(PhaseDraining, now)
-	case capacity > oldCapacity && b.healthy && now.After(b.passiveUntil):
+	case capacity > oldCapacity && b.healthy && !b.adminDisabled && now.After(b.passiveUntil):
 		b.enterPhaseLocked(PhaseRecovering, now)
 	}
 	b.lastUpdated = now
@@ -303,23 +309,25 @@ func (b *Backend) setCapacity(capacity float64) error {
 	return nil
 }
 
-func (b *Backend) setHealth(healthy bool) {
+func (b *Backend) setAdminHealth(healthy bool) {
 	b.mu.Lock()
 	now := time.Now()
-	wasUnavailable := !b.healthy || now.Before(b.passiveUntil) || b.phase == PhaseDrained || b.phase == PhaseDraining
-	b.healthy = healthy
+	wasUnavailable := b.adminDisabled || !b.healthy || now.Before(b.passiveUntil) || b.phase == PhaseDrained || b.phase == PhaseDraining
 	if healthy {
+		b.adminDisabled = false
 		b.passiveUntil = time.Time{}
 		b.failureCooloffUntil = time.Time{}
 		b.consecutiveFailures = 0
 		b.lastError = ""
-		if b.capacity > 0 && wasUnavailable {
+		if b.capacity > 0 && b.healthy && wasUnavailable {
 			b.enterPhaseLocked(PhaseRecovering, now)
 		}
-	} else if b.phase != PhaseDrained {
-		b.enterPhaseLocked(PhaseDraining, now)
+	} else {
+		b.adminDisabled = true
+		if b.phase != PhaseDrained {
+			b.enterPhaseLocked(PhaseDraining, now)
+		}
 	}
-	b.lastHealthProbe = now
 	b.lastUpdated = now
 	b.mu.Unlock()
 }
@@ -391,7 +399,7 @@ func (b *Backend) setProbeHealth(healthy bool, message string) {
 		b.passiveUntil = time.Time{}
 		b.failureCooloffUntil = time.Time{}
 		b.lastError = ""
-		if b.capacity > 0 && (b.phase == PhaseDrained || b.phase == PhaseDraining) {
+		if !b.adminDisabled && b.capacity > 0 && (b.phase == PhaseDrained || b.phase == PhaseDraining) {
 			b.enterPhaseLocked(PhaseRecovering, now)
 		}
 	} else {
@@ -669,7 +677,7 @@ func (b *Backend) recomputeWeight(policy LoadPolicy, smoothStep float64) {
 
 	now := time.Now()
 	inflight := atomic.LoadInt64(&b.inflight)
-	eligible := b.healthy && now.After(b.passiveUntil) && b.capacity > 0
+	eligible := b.healthy && !b.adminDisabled && now.After(b.passiveUntil) && b.capacity > 0
 	desired := b.desiredWeightLocked(policy, eligible, inflight)
 
 	if !eligible {

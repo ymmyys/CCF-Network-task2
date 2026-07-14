@@ -757,7 +757,7 @@
     function pct(n) { return `${(n * 100).toFixed(1)}%`; }
     function isHot(b) { return (b.remote_utilization || 0) >= 0.85; }
     function isDown(b) {
-      return !b.healthy || b.passive_ejected || b.phase === "drained" ||
+      return !b.healthy || b.admin_disabled || b.passive_ejected || b.phase === "drained" ||
         (b.phase === "draining" && (b.effective_weight || 0) < 0.2);
     }
 
@@ -851,8 +851,13 @@
     function updateBadges(container, backend) {
       const badges = [
         { text: backend.phase || "unknown", cls: backend.phase || "" },
-        { text: backend.healthy ? "healthy" : "unhealthy", cls: "" },
       ];
+      if (backend.admin_disabled) {
+        badges.push({ text: "admin disabled", cls: "drained" });
+        if (backend.observed_healthy === false) badges.push({ text: "probe unhealthy", cls: "drained" });
+      } else {
+        badges.push({ text: backend.healthy ? "healthy" : "unhealthy", cls: backend.healthy ? "" : "drained" });
+      }
       if (backend.passive_ejected) badges.push({ text: "ejected", cls: "drained" });
       if (backend.failure_cooling_off) badges.push({ text: "cooloff", cls: "recovering" });
       const signature = badges.map((badge) => `${badge.text}:${badge.cls}`).join("|");

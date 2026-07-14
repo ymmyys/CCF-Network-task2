@@ -264,6 +264,101 @@ func TestBackendFailureCooloffTemporarilyUnschedulable(t *testing.T) {
 	}
 }
 
+func TestAdminDisablePersistsAcrossSuccessfulHealthProbe(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		SlowStartDuration: Duration{
+			Duration: 10 * time.Second,
+		},
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:       "npu-a",
+				URL:      "http://127.0.0.1:9001",
+				Capacity: 10,
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	backend.setAdminHealth(false)
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+	state := backend.state(time.Now())
+	if !state.AdminDisabled || state.Healthy || !state.ObservedHealthy {
+		t.Fatalf("state after admin disable = %+v", state)
+	}
+	if state.DesiredWeight != 0 || state.EffectiveWeight <= 0 {
+		t.Fatalf("weights after admin disable: desired=%v effective=%v", state.DesiredWeight, state.EffectiveWeight)
+	}
+	if _, schedulable := backend.schedulingState(time.Now()); schedulable {
+		t.Fatal("admin-disabled backend is schedulable")
+	}
+
+	backend.setProbeHealth(true, "")
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+	state = backend.state(time.Now())
+	if !state.AdminDisabled || state.Healthy || !state.ObservedHealthy {
+		t.Fatalf("successful probe overrode admin disable: %+v", state)
+	}
+	if state.Phase != string(PhaseDraining) {
+		t.Fatalf("phase after successful probe = %q, want draining", state.Phase)
+	}
+	if _, schedulable := backend.schedulingState(time.Now()); schedulable {
+		t.Fatal("admin-disabled backend became schedulable after successful probe")
+	}
+
+	backend.setAdminHealth(true)
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+	state = backend.state(time.Now())
+	if state.AdminDisabled || !state.Healthy || state.Phase != string(PhaseRecovering) {
+		t.Fatalf("state after clearing admin disable = %+v", state)
+	}
+}
+
+func TestAdminEnableDoesNotOverrideFailedHealthProbe(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:       "npu-a",
+				URL:      "http://127.0.0.1:9001",
+				Capacity: 10,
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	backend.setProbeHealth(false, "probe failed")
+	backend.setAdminHealth(true)
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+	state := backend.state(time.Now())
+	if state.AdminDisabled || state.ObservedHealthy || state.Healthy {
+		t.Fatalf("admin enable overrode failed probe: %+v", state)
+	}
+	if _, schedulable := backend.schedulingState(time.Now()); schedulable {
+		t.Fatal("probe-unhealthy backend is schedulable")
+	}
+}
+
 func TestBackendPhaseTransitionsForDrainAndRecover(t *testing.T) {
 	cfg := Config{
 		DefaultPool: "default",

@@ -226,7 +226,7 @@ func (rt *Router) handleHealthUpdate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "backend not found", http.StatusNotFound)
 		return
 	}
-	backend.setHealth(body.Healthy)
+	backend.setAdminHealth(body.Healthy)
 	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
 	writeJSON(w, backend.state(time.Now()))
 }
@@ -247,6 +247,8 @@ func (rt *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {
 			fmt.Fprintf(w, "router_backend_effective_weight{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.EffectiveWeight)
 			fmt.Fprintf(w, "router_backend_inflight{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, backend.Inflight)
 			fmt.Fprintf(w, "router_backend_healthy{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.Healthy && !backend.PassiveEjected))
+			fmt.Fprintf(w, "router_backend_observed_healthy{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.ObservedHealthy))
+			fmt.Fprintf(w, "router_backend_admin_disabled{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.AdminDisabled))
 			fmt.Fprintf(w, "router_backend_failure_cooling_off{pool=%q,backend=%q} %d\n", pool.Name, backend.ID, bool01(backend.FailureCoolingOff))
 			fmt.Fprintf(w, "router_backend_remote_utilization{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.RemoteUtilization)
 			fmt.Fprintf(w, "router_backend_queue_depth{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.QueueDepth)
