@@ -396,6 +396,7 @@
       transition: border-color .25s, transform .25s, box-shadow .25s;
       animation: nodeIn .45s ease both;
     }
+    .node.stable { animation: none; }
     @keyframes nodeIn {
       from { opacity: 0; transform: translateY(8px) scale(0.985); }
       to { opacity: 1; transform: none; }
@@ -536,6 +537,7 @@
     }
 
     .share-list { display: grid; gap: 12px; }
+    .share-row.entering { animation: nodeIn .4s ease both; }
     .share-row .name {
       display: flex;
       justify-content: space-between;
@@ -728,6 +730,7 @@
       lastState: null,
       offlineStep: 0,
       offlineTimer: null,
+      fetching: false,
     };
 
     function defaultAdminUrl() {
@@ -765,34 +768,34 @@
       return pools.find((p) => p.name === wanted) || pools[0];
     }
 
+    function syncSelectOptions(sel, values, preferred) {
+      const current = Array.from(sel.options, (option) => option.value);
+      const changed = current.length !== values.length ||
+        current.some((value, index) => value !== values[index]);
+      if (changed) {
+        sel.replaceChildren(...values.map((value) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          return option;
+        }));
+      }
+      if (values.includes(preferred)) sel.value = preferred;
+      else if (values.length) sel.value = values[0];
+    }
+
     function refreshPoolOptions(data) {
       const sel = $("poolSelect");
-      const prev = sel.value;
       const names = (data.pools || []).map((p) => p.name);
-      sel.innerHTML = "";
-      names.forEach((name) => {
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        sel.appendChild(opt);
-      });
-      if (names.includes(prev)) sel.value = prev;
-      else if (names.length) sel.value = names[0];
+      syncSelectOptions(sel, names, sel.value || state.selectedPool);
+      state.selectedPool = sel.value;
     }
 
     function refreshBackendOptions(pool) {
       const sel = $("backendSelect");
       const prev = state.selectedBackend || sel.value;
       const backends = (pool && pool.backends) || [];
-      sel.innerHTML = "";
-      backends.forEach((b) => {
-        const opt = document.createElement("option");
-        opt.value = b.id;
-        opt.textContent = b.id;
-        sel.appendChild(opt);
-      });
-      if (backends.some((b) => b.id === prev)) sel.value = prev;
-      else if (backends.length) sel.value = backends[0].id;
+      syncSelectOptions(sel, backends.map((b) => b.id), prev);
       state.selectedBackend = sel.value;
     }
 
@@ -807,12 +810,136 @@
       return m ? `NPU${m[1]}` : id;
     }
 
+    function setText(element, value) {
+      const text = String(value);
+      if (element.textContent !== text) element.textContent = text;
+    }
+
+    function createBackendCard(id) {
+      const card = document.createElement("article");
+      card.className = "node";
+      card.dataset.backendId = id;
+      card.innerHTML = `
+        <div class="node-top">
+          <div class="node-id-wrap">
+            <div class="node-id"></div>
+            <div class="node-url"></div>
+          </div>
+          <div class="badges"></div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="k">capacity</div><div class="v value-capacity"></div></div>
+          <div class="metric"><div class="k">desired / eff</div><div class="v value-weight"></div></div>
+          <div class="metric"><div class="k">inflight</div><div class="v value-inflight"></div></div>
+          <div class="metric"><div class="k">latency</div><div class="v value-latency"></div></div>
+        </div>
+        <div class="bars">
+          <div>
+            <div class="bar-label"><span>weight share</span><b class="label-weight"></b></div>
+            <div class="bar"><i class="bar-weight"></i></div>
+          </div>
+          <div>
+            <div class="bar-label"><span>remote utilization</span><b class="label-util"></b></div>
+            <div class="bar util"><i class="bar-util"></i></div>
+          </div>
+        </div>
+        <div class="footer-note node-error" style="display:none;margin-top:10px;color:#ffb0bf"></div>`;
+      card.addEventListener("animationend", () => card.classList.add("stable"), { once: true });
+      return card;
+    }
+
+    function updateBadges(container, backend) {
+      const badges = [
+        { text: backend.phase || "unknown", cls: backend.phase || "" },
+        { text: backend.healthy ? "healthy" : "unhealthy", cls: "" },
+      ];
+      if (backend.passive_ejected) badges.push({ text: "ejected", cls: "drained" });
+      if (backend.failure_cooling_off) badges.push({ text: "cooloff", cls: "recovering" });
+      const signature = badges.map((badge) => `${badge.text}:${badge.cls}`).join("|");
+      if (container.dataset.signature === signature) return;
+      container.dataset.signature = signature;
+      container.replaceChildren(...badges.map((badge) => {
+        const span = document.createElement("span");
+        span.className = `badge ${badge.cls}`.trim();
+        span.textContent = badge.text;
+        return span;
+      }));
+    }
+
+    function updateBackendCard(card, backend, totalWeight) {
+      const share = Math.max(0, backend.effective_weight || 0) / totalWeight;
+      const util = Math.min(1, Math.max(0, backend.remote_utilization || 0));
+      card.classList.toggle("down", isDown(backend));
+      card.classList.toggle("hot", !isDown(backend) && isHot(backend));
+      setText(card.querySelector(".node-id"), backend.id);
+      setText(card.querySelector(".node-url"), backend.url || "");
+      updateBadges(card.querySelector(".badges"), backend);
+      setText(card.querySelector(".value-capacity"), fmt(backend.capacity, 0));
+      setText(card.querySelector(".value-weight"), `${fmt(backend.desired_weight)} / ${fmt(backend.effective_weight)}`);
+      setText(card.querySelector(".value-inflight"), `${backend.inflight || 0}/${backend.max_inflight || 0}`);
+      setText(card.querySelector(".value-latency"), `${fmt(backend.latency_ewma_ms, 0)}ms`);
+      setText(card.querySelector(".label-weight"), pct(share));
+      setText(card.querySelector(".label-util"), pct(util));
+      card.querySelector(".bar-weight").style.width = `${(share * 100).toFixed(1)}%`;
+      card.querySelector(".bar-util").style.width = `${(util * 100).toFixed(1)}%`;
+      const error = card.querySelector(".node-error");
+      setText(error, backend.last_error || "");
+      error.style.display = backend.last_error ? "block" : "none";
+    }
+
+    function renderBackendCards(backends, totalWeight) {
+      const container = $("nodes");
+      const existing = new Map(Array.from(container.querySelectorAll(".node[data-backend-id]"),
+        (card) => [card.dataset.backendId, card]));
+      const wanted = new Set(backends.map((backend) => backend.id));
+      existing.forEach((card, id) => { if (!wanted.has(id)) card.remove(); });
+      backends.forEach((backend, index) => {
+        let card = existing.get(backend.id);
+        if (!card) card = createBackendCard(backend.id);
+        updateBackendCard(card, backend, totalWeight);
+        if (container.children[index] !== card) container.insertBefore(card, container.children[index] || null);
+      });
+    }
+
+    function createShareRow(id) {
+      const row = document.createElement("div");
+      row.className = "share-row entering";
+      row.dataset.backendId = id;
+      row.innerHTML = `
+        <div class="name"><span class="share-id"></span><span class="share-value"></span></div>
+        <div class="share-track"><i></i></div>`;
+      row.addEventListener("animationend", () => row.classList.remove("entering"), { once: true });
+      return row;
+    }
+
+    function renderShares(backends, totalWeight) {
+      const container = $("shares");
+      const existing = new Map(Array.from(container.querySelectorAll(".share-row[data-backend-id]"),
+        (row) => [row.dataset.backendId, row]));
+      const ordered = backends.slice();
+      const wanted = new Set(ordered.map((backend) => backend.id));
+      existing.forEach((row, id) => { if (!wanted.has(id)) row.remove(); });
+      ordered.forEach((backend, index) => {
+        const share = Math.max(0, backend.effective_weight || 0) / totalWeight;
+        let row = existing.get(backend.id);
+        if (!row) row = createShareRow(backend.id);
+        setText(row.querySelector(".share-id"), backend.id);
+        setText(row.querySelector(".share-value"), `${pct(share)} · w=${fmt(backend.effective_weight)}`);
+        row.querySelector(".share-track > i").style.width = `${(share * 100).toFixed(1)}%`;
+        if (container.children[index] !== row) container.insertBefore(row, container.children[index] || null);
+      });
+    }
+
     function render(data) {
       state.lastState = data;
       refreshPoolOptions(data);
       const pool = pickPool(data);
       if (!pool) {
-        $("nodes").innerHTML = "<div class='footer-note'>无 pool 数据</div>";
+        $("nodes").replaceChildren(Object.assign(document.createElement("div"), {
+          className: "footer-note",
+          textContent: "无 pool 数据",
+        }));
+        $("shares").replaceChildren();
         return;
       }
       refreshBackendOptions(pool);
@@ -826,55 +953,8 @@
       $("kpiHot").textContent = hot.length ? hot.map((b) => shortNpu(b.id)).join(", ") : "无";
       $("kpiTime").textContent = data.time ? `state @ ${new Date(data.time).toLocaleTimeString()}` : "no timestamp";
 
-      $("nodes").innerHTML = backends.map((b, idx) => {
-        const share = Math.max(0, b.effective_weight || 0) / totalW;
-        const util = Math.min(1, Math.max(0, b.remote_utilization || 0));
-        const cls = isDown(b) ? "down" : (isHot(b) ? "hot" : "");
-        return `
-          <article class="node ${cls}" style="animation-delay:${idx * 0.04}s">
-            <div class="node-top">
-              <div class="node-id-wrap">
-                <div class="node-id">${b.id}</div>
-                <div class="node-url">${b.url || ""}</div>
-              </div>
-              <div class="badges">
-                <span class="badge ${b.phase || ""}">${b.phase || "unknown"}</span>
-                <span class="badge">${b.healthy ? "healthy" : "unhealthy"}</span>
-                ${b.passive_ejected ? '<span class="badge drained">ejected</span>' : ""}
-                ${b.failure_cooling_off ? '<span class="badge recovering">cooloff</span>' : ""}
-              </div>
-            </div>
-            <div class="metrics">
-              <div class="metric"><div class="k">capacity</div><div class="v">${fmt(b.capacity, 0)}</div></div>
-              <div class="metric"><div class="k">desired / eff</div><div class="v">${fmt(b.desired_weight)} / ${fmt(b.effective_weight)}</div></div>
-              <div class="metric"><div class="k">inflight</div><div class="v">${b.inflight || 0}/${b.max_inflight || 0}</div></div>
-              <div class="metric"><div class="k">latency</div><div class="v">${fmt(b.latency_ewma_ms, 0)}ms</div></div>
-            </div>
-            <div class="bars">
-              <div>
-                <div class="bar-label"><span>weight share</span><b>${pct(share)}</b></div>
-                <div class="bar"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
-              </div>
-              <div>
-                <div class="bar-label"><span>remote utilization</span><b>${pct(util)}</b></div>
-                <div class="bar util"><i style="width:${(util * 100).toFixed(1)}%"></i></div>
-              </div>
-            </div>
-            ${b.last_error ? `<div class="footer-note" style="margin-top:10px;color:#ffb0bf">${b.last_error}</div>` : ""}
-          </article>`;
-      }).join("");
-
-      $("shares").innerHTML = backends
-        .slice()
-        .sort((a, b) => (b.effective_weight || 0) - (a.effective_weight || 0))
-        .map((b, idx) => {
-          const share = Math.max(0, b.effective_weight || 0) / totalW;
-          return `
-            <div class="share-row" style="animation:nodeIn .4s ease both;animation-delay:${idx * 0.04}s">
-              <div class="name"><span>${b.id}</span><span>${pct(share)} · w=${fmt(b.effective_weight)}</span></div>
-              <div class="share-track"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
-            </div>`;
-        }).join("");
+      renderBackendCards(backends, totalW);
+      renderShares(backends, totalW);
     }
 
     async function fetchLive() {
@@ -914,6 +994,8 @@
     }
 
     async function tickLive() {
+      if (state.fetching) return;
+      state.fetching = true;
       try {
         const data = await fetchLive();
         render(data);
@@ -922,6 +1004,8 @@
         setMode("live", false, "live error");
         $("kpiLink").textContent = "ERROR";
         log(`拉取 /admin/state 失败: ${err.message}`, "bad");
+      } finally {
+        state.fetching = false;
       }
     }
 
@@ -1104,6 +1188,10 @@
     $("btnUnhealthy").addEventListener("click", () => actHealth(false));
     $("btnHealthy").addEventListener("click", () => actHealth(true));
     $("backendSelect").addEventListener("change", (e) => { state.selectedBackend = e.target.value; });
+    $("poolSelect").addEventListener("change", (e) => {
+      state.selectedPool = e.target.value;
+      if (state.lastState) render(state.lastState);
+    });
     $("intervalSelect").addEventListener("change", () => { if (state.mode === "live") startLive(); });
 
     if (location.protocol.startsWith("http")) {
