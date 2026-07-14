@@ -548,7 +548,49 @@
       box-shadow: 0 0 16px rgba(255, 176, 32, 0.35);
     }
 
-    .share-list { display: grid; gap: 12px; }
+    .allocation-summary {
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .allocation-label, .flow-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 5px;
+    }
+    .allocation-label b, .flow-label b {
+      color: var(--text);
+      font-family: var(--mono);
+      font-weight: 500;
+    }
+    .allocation-strip {
+      display: flex;
+      height: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(140, 175, 195, 0.2);
+      border-radius: 5px;
+      background: rgba(0,0,0,0.4);
+    }
+    .allocation-strip > i {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--flow-color);
+      box-shadow: inset -1px 0 rgba(0,0,0,0.35);
+      transition: width .55s cubic-bezier(.22, 1, .36, 1);
+    }
+    .allocation-note {
+      min-height: 18px;
+      margin-top: 8px;
+      color: #c8d8e2;
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+    .share-list { display: grid; gap: 14px; }
     .share-row.entering { animation: nodeIn .4s ease both; }
     .share-row .name {
       display: flex;
@@ -578,9 +620,13 @@
     .share-track > i {
       display: block;
       height: 100%;
-      background: linear-gradient(90deg, #1aa890, #7ef0e0);
+      background: var(--flow-color, var(--teal));
       transition: width .55s cubic-bezier(.22, 1, .36, 1);
     }
+    .share-track.actual { height: 7px; margin-top: 4px; }
+    .share-track.actual > i { opacity: 0.72; }
+    .share-delta.up { color: #68e6b4; }
+    .share-delta.down { color: #ffbe62; }
 
     .log {
       margin-top: 4px;
@@ -714,8 +760,13 @@
       </div>
       <div class="panel">
         <div class="panel-head">
-          <h2>Weight Control</h2>
-          <small>absolute weight · target marker · dispatch share</small>
+          <h2>Traffic Redistribution</h2>
+          <small>planned share · actual routed requests</small>
+        </div>
+        <div class="allocation-summary">
+          <div class="allocation-label"><span>集群计划调度份额</span><b id="allocationTotal">100%</b></div>
+          <div id="allocationStrip" class="allocation-strip"></div>
+          <div id="allocationNote" class="allocation-note">等待调度数据</div>
         </div>
         <div id="shares" class="share-list"></div>
         <div class="panel-head" style="margin-top:20px">
@@ -728,9 +779,9 @@
 
     <p class="footer-note">
       兼容 <code>GET /admin/state</code>、<code>POST /admin/capacity</code>、<code>POST /admin/health</code>。
-      权重条使用集群统一绝对刻度：实心条为 <strong>effective_weight</strong>，白色竖线为 <strong>desired_weight</strong>，
-      文字同时给出 capacity 与归一化 dispatch share。热点用 <strong>remote_utilization</strong> 高亮。
-      P2C 选路还会比较 loadScore，实际请求占比可能与归一化权重份额不同。
+      节点卡片权重条使用集群统一绝对刻度：实心条为 <strong>effective_weight</strong>，白色竖线为 <strong>desired_weight</strong>。
+      右侧计划份额由 effective weight 归一化，实际流量由 <strong>selected_total</strong> 在相邻刷新窗口的增量计算。
+      P2C 还会比较 loadScore，因此实际请求占比可以与计划权重份额不同。
       无 NPU 时可使用「离线演示」。
     </p>
   </div>
@@ -746,6 +797,8 @@
       offlineStep: 0,
       offlineTimer: null,
       fetching: false,
+      shareBaseline: null,
+      selectedCounters: new Map(),
     };
 
     function defaultAdminUrl() {
@@ -940,18 +993,118 @@
       });
     }
 
+    const FLOW_COLORS = [
+      "#35c7b4", "#5aa7ff", "#f2b84b", "#f0786b",
+      "#6fce7d", "#d778c5", "#5bc8e8", "#b5c95a",
+    ];
+
+    function captureShareBaseline(poolName) {
+      const pool = (state.lastState?.pools || []).find((item) => item.name === poolName);
+      if (!pool) return;
+      const total = (pool.backends || []).reduce((sum, backend) =>
+        sum + Math.max(0, backend.effective_weight || 0), 0) || 1;
+      state.shareBaseline = {
+        pool: poolName,
+        shares: new Map((pool.backends || []).map((backend) => [
+          backend.id,
+          Math.max(0, backend.effective_weight || 0) / total,
+        ])),
+      };
+    }
+
+    function ensureShareBaseline(poolName, backends, totalWeight) {
+      if (state.shareBaseline?.pool === poolName) return state.shareBaseline.shares;
+      state.shareBaseline = {
+        pool: poolName,
+        shares: new Map(backends.map((backend) => [
+          backend.id,
+          Math.max(0, backend.effective_weight || 0) / totalWeight,
+        ])),
+      };
+      return state.shareBaseline.shares;
+    }
+
+    function measureActualFlow(poolName, backends) {
+      const deltas = new Map();
+      let total = 0;
+      let available = false;
+      backends.forEach((backend) => {
+        if (backend.selected_total == null) return;
+        available = true;
+        const key = `${poolName}/${backend.id}`;
+        const current = Number(backend.selected_total) || 0;
+        const previous = state.selectedCounters.get(key);
+        const delta = previous == null || current < previous ? 0 : current - previous;
+        state.selectedCounters.set(key, current);
+        deltas.set(backend.id, delta);
+        total += delta;
+      });
+      return { deltas, total, available };
+    }
+
+    function renderAllocationStrip(backends, totalWeight, baselineShares) {
+      const container = $("allocationStrip");
+      const existing = new Map(Array.from(container.children, (segment) =>
+        [segment.dataset.backendId, segment]));
+      const wanted = new Set(backends.map((backend) => backend.id));
+      existing.forEach((segment, id) => { if (!wanted.has(id)) segment.remove(); });
+
+      let released = 0;
+      let received = 0;
+      const releasing = [];
+      const receiving = [];
+      backends.forEach((backend, index) => {
+        const share = Math.max(0, backend.effective_weight || 0) / totalWeight;
+        const delta = share - (baselineShares.get(backend.id) || 0);
+        if (delta < 0) {
+          released += -delta;
+          if (delta < -0.0005) releasing.push(backend.id);
+        } else if (delta > 0) {
+          received += delta;
+          if (delta > 0.0005) receiving.push(backend.id);
+        }
+        let segment = existing.get(backend.id);
+        if (!segment) {
+          segment = document.createElement("i");
+          segment.dataset.backendId = backend.id;
+        }
+        segment.style.setProperty("--flow-color", FLOW_COLORS[index % FLOW_COLORS.length]);
+        segment.style.width = `${(share * 100).toFixed(2)}%`;
+        segment.title = `${backend.id}: ${pct(share)}`;
+        if (container.children[index] !== segment) {
+          container.insertBefore(segment, container.children[index] || null);
+        }
+      });
+
+      setText($("allocationTotal"), `${backends.length} nodes · 100%`);
+      if (released < 0.0005 && received < 0.0005) {
+        setText($("allocationNote"), "当前计划份额与操作前基线一致");
+      } else {
+        const sourceText = releasing.length === 1
+          ? `${releasing[0]} 释放 ${pct(released)}`
+          : `${releasing.length} 个节点合计释放 ${pct(released)}`;
+        const receiverText = receiving.length === 1
+          ? `${receiving[0]} 承接 ${pct(received)}`
+          : `${receiving.length} 个节点合计承接 ${pct(received)}`;
+        setText($("allocationNote"), `${sourceText}，${receiverText}`);
+      }
+    }
+
     function createShareRow(id) {
       const row = document.createElement("div");
       row.className = "share-row entering";
       row.dataset.backendId = id;
       row.innerHTML = `
         <div class="name"><span class="share-id"></span><span class="share-value"></span></div>
-        <div class="share-track"><i></i><span class="weight-target"></span></div>`;
+        <div class="flow-label"><span>计划份额</span><b class="planned-value"></b></div>
+        <div class="share-track planned"><i></i></div>
+        <div class="flow-label" style="margin-top:6px"><span>实际路由 / 刷新窗口</span><b class="actual-value"></b></div>
+        <div class="share-track actual"><i></i></div>`;
       row.addEventListener("animationend", () => row.classList.remove("entering"), { once: true });
       return row;
     }
 
-    function renderShares(backends, totalWeight, weightScale) {
+    function renderShares(backends, totalWeight, baselineShares, actualFlow) {
       const container = $("shares");
       const existing = new Map(Array.from(container.querySelectorAll(".share-row[data-backend-id]"),
         (row) => [row.dataset.backendId, row]));
@@ -960,15 +1113,24 @@
       existing.forEach((row, id) => { if (!wanted.has(id)) row.remove(); });
       ordered.forEach((backend, index) => {
         const share = Math.max(0, backend.effective_weight || 0) / totalWeight;
-        const effective = Math.max(0, backend.effective_weight || 0);
-        const target = Math.max(0, backend.desired_weight || 0);
+        const baseline = baselineShares.get(backend.id) || 0;
+        const delta = share - baseline;
+        const requests = actualFlow.deltas.get(backend.id) || 0;
+        const actualShare = actualFlow.total > 0 ? requests / actualFlow.total : 0;
         let row = existing.get(backend.id);
         if (!row) row = createShareRow(backend.id);
+        row.style.setProperty("--flow-color", FLOW_COLORS[index % FLOW_COLORS.length]);
         setText(row.querySelector(".share-id"), backend.id);
-        setText(row.querySelector(".share-value"),
-          `eff ${fmt(effective)} · target ${fmt(target)} · cap ${fmt(backend.capacity, 0)} · share ${pct(share)}`);
-        row.querySelector(".share-track > i").style.width = `${Math.min(100, effective / weightScale * 100).toFixed(1)}%`;
-        row.querySelector(".weight-target").style.left = `${Math.min(100, target / weightScale * 100).toFixed(1)}%`;
+        setText(row.querySelector(".share-value"), `eff ${fmt(backend.effective_weight)} · cap ${fmt(backend.capacity, 0)}`);
+        const deltaText = Math.abs(delta) < 0.0005 ? "基线" : `${delta > 0 ? "↑" : "↓"} ${delta > 0 ? "+" : ""}${(delta * 100).toFixed(1)}pp`;
+        const plannedValue = row.querySelector(".planned-value");
+        setText(plannedValue, `${pct(share)} · ${deltaText}`);
+        plannedValue.className = `planned-value share-delta ${delta > 0.0005 ? "up" : (delta < -0.0005 ? "down" : "")}`;
+        setText(row.querySelector(".actual-value"), actualFlow.available
+          ? (actualFlow.total > 0 ? `${requests} req · ${pct(actualShare)}` : "0 req")
+          : "无计数数据");
+        row.querySelector(".share-track.planned > i").style.width = `${(share * 100).toFixed(1)}%`;
+        row.querySelector(".share-track.actual > i").style.width = `${(actualShare * 100).toFixed(1)}%`;
         if (container.children[index] !== row) container.insertBefore(row, container.children[index] || null);
       });
     }
@@ -983,6 +1145,8 @@
           textContent: "无 pool 数据",
         }));
         $("shares").replaceChildren();
+        $("allocationStrip").replaceChildren();
+        setText($("allocationNote"), "无 pool 数据");
         return;
       }
       refreshBackendOptions(pool);
@@ -995,6 +1159,8 @@
       ]));
       const totalInflight = backends.reduce((s, b) => s + (b.inflight || 0), 0);
       const hot = backends.filter(isHot);
+      const baselineShares = ensureShareBaseline(pool.name, backends, totalW);
+      const actualFlow = measureActualFlow(pool.name, backends);
 
       $("kpiBackends").textContent = String(backends.length);
       $("kpiInflight").textContent = String(totalInflight);
@@ -1002,7 +1168,8 @@
       $("kpiTime").textContent = data.time ? `state @ ${new Date(data.time).toLocaleTimeString()}` : "no timestamp";
 
       renderBackendCards(backends, totalW, weightScale);
-      renderShares(backends, totalW, weightScale);
+      renderAllocationStrip(backends, totalW, baselineShares);
+      renderShares(backends, totalW, baselineShares, actualFlow);
     }
 
     async function fetchLive() {
@@ -1059,6 +1226,10 @@
 
     function startLive() {
       stopTimers();
+      if (state.mode !== "live") {
+        state.shareBaseline = null;
+        state.selectedCounters.clear();
+      }
       log(`连接 ${$("adminUrl").value}`, "ok");
       tickLive();
       state.timer = setInterval(tickLive, Number($("intervalSelect").value || 1000));
@@ -1192,6 +1363,8 @@
     function startOffline() {
       stopTimers();
       state.offlineStep = 0;
+      state.shareBaseline = null;
+      state.selectedCounters.clear();
       const play = () => {
         const scene = OFFLINE_SCENES[state.offlineStep % OFFLINE_SCENES.length];
         render(scene.state);
@@ -1208,6 +1381,7 @@
       const backend = $("backendSelect").value;
       if (!backend) return;
       try {
+        captureShareBaseline(pool);
         await postJSON("/admin/capacity", { pool, backend, capacity });
         log(`capacity ${backend} -> ${capacity}`, "warn");
         await tickLive();
@@ -1221,6 +1395,7 @@
       const backend = $("backendSelect").value;
       if (!backend) return;
       try {
+        captureShareBaseline(pool);
         await postJSON("/admin/health", { pool, backend, healthy });
         log(`health ${backend} -> ${healthy}`, healthy ? "ok" : "bad");
         await tickLive();
@@ -1238,6 +1413,7 @@
     $("backendSelect").addEventListener("change", (e) => { state.selectedBackend = e.target.value; });
     $("poolSelect").addEventListener("change", (e) => {
       state.selectedPool = e.target.value;
+      state.shareBaseline = null;
       if (state.lastState) render(state.lastState);
     });
     $("intervalSelect").addEventListener("change", () => { if (state.mode === "live") startLive(); });

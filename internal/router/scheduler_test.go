@@ -401,6 +401,43 @@ func TestCapacityDownscaleIsNotOverriddenBySuccessfulHealthProbe(t *testing.T) {
 	}
 }
 
+func TestBackendSelectionCounter(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:       "npu-a",
+				URL:      "http://127.0.0.1:9001",
+				Capacity: 10,
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	backend.acquire()
+	backend.release(time.Millisecond)
+	backend.acquire()
+	backend.release(time.Millisecond)
+
+	state := backend.state(time.Now())
+	if state.SelectedTotal != 2 {
+		t.Fatalf("selected total = %d, want 2", state.SelectedTotal)
+	}
+	if state.Inflight != 0 {
+		t.Fatalf("inflight = %d, want 0", state.Inflight)
+	}
+}
+
 func TestBackendPhaseTransitionsForDrainAndRecover(t *testing.T) {
 	cfg := Config{
 		DefaultPool: "default",

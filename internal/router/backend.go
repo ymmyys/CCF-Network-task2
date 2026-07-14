@@ -56,6 +56,7 @@ type Backend struct {
 	proxy                   *httputil.ReverseProxy
 
 	inflight int64
+	selected uint64
 
 	mu                  sync.RWMutex
 	capacity            float64
@@ -95,6 +96,7 @@ type BackendState struct {
 	PassiveEjected      bool      `json:"passive_ejected"`
 	FailureCoolingOff   bool      `json:"failure_cooling_off"`
 	Inflight            int64     `json:"inflight"`
+	SelectedTotal       uint64    `json:"selected_total"`
 	MaxInflight         int64     `json:"max_inflight"`
 	RemoteUtilization   float64   `json:"remote_utilization"`
 	QueueDepth          float64   `json:"queue_depth"`
@@ -225,6 +227,7 @@ func (b *Backend) Proxy() *httputil.ReverseProxy {
 }
 
 func (b *Backend) acquire() {
+	atomic.AddUint64(&b.selected, 1)
 	atomic.AddInt64(&b.inflight, 1)
 }
 
@@ -293,6 +296,7 @@ func (b *Backend) state(now time.Time) BackendState {
 		PassiveEjected:      now.Before(b.passiveUntil),
 		FailureCoolingOff:   now.Before(b.failureCooloffUntil),
 		Inflight:            atomic.LoadInt64(&b.inflight),
+		SelectedTotal:       atomic.LoadUint64(&b.selected),
 		MaxInflight:         b.maxInflight,
 		RemoteUtilization:   b.remoteUtilization,
 		QueueDepth:          b.queueDepth,

@@ -85,10 +85,12 @@ MUTT 的技术路线分为四层：
 
 | 接口 | 作用 |
 |---|---|
-| `GET /admin/state` | 查看每个 backend 的 phase、transition_reason、capacity、desired/effective weight、inflight 和远程负载 |
+| `GET /admin/state` | 查看每个 backend 的 phase、transition_reason、capacity、desired/effective weight、inflight、selected_total 和远程负载 |
 | `POST /admin/capacity` | 动态修改节点 capacity，用于降容、扩容和赛题指定 10->1 场景 |
 | `POST /admin/health` | 设置或解除持久人工摘除；该状态独立于主动健康探测，恢复时进入 slow-start |
 | `GET /metrics` | 暴露 MUTT 自身 Prometheus 指标，供实验采集和可视化分析 |
+
+其中 `selected_total` 与 Prometheus 指标 `router_backend_selected_total` 记录每个后端被调度器实际选中的累计次数。可视化页面按刷新窗口计算增量，将“由 effective weight 推导的计划份额”和“实际路由请求份额”并列展示，从而直接观察降容节点释放的流量由哪些节点承接。
 
 ## 4. 核心算法设计
 
