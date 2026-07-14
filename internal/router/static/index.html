@@ -531,6 +531,18 @@
       box-shadow: 0 0 16px rgba(62, 224, 200, 0.35);
       transition: width .55s cubic-bezier(.22, 1, .36, 1);
     }
+    .weight-target {
+      position: absolute;
+      top: -2px;
+      bottom: -2px;
+      width: 2px;
+      border-radius: 2px;
+      background: #f5fbff;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 0 8px rgba(255,255,255,0.7);
+      transform: translateX(-1px);
+      transition: left .55s cubic-bezier(.22, 1, .36, 1);
+      z-index: 2;
+    }
     .bar.util > i {
       background: linear-gradient(90deg, #a86a08, var(--amber));
       box-shadow: 0 0 16px rgba(255, 176, 32, 0.35);
@@ -541,6 +553,7 @@
     .share-row .name {
       display: flex;
       justify-content: space-between;
+      flex-wrap: wrap;
       gap: 8px;
       font-size: 0.82rem;
       margin-bottom: 5px;
@@ -560,6 +573,7 @@
       background: rgba(0,0,0,0.4);
       border: 1px solid rgba(140, 175, 195, 0.12);
       overflow: hidden;
+      position: relative;
     }
     .share-track > i {
       display: block;
@@ -694,14 +708,14 @@
       <div class="panel">
         <div class="panel-head">
           <h2>NPU / Backend</h2>
-          <small>weight share · remote utilization</small>
+          <small>effective / target · remote utilization</small>
         </div>
         <div id="nodes" class="nodes"></div>
       </div>
       <div class="panel">
         <div class="panel-head">
-          <h2>Weight Share</h2>
-          <small>by effective_weight</small>
+          <h2>Weight Control</h2>
+          <small>absolute weight · target marker · dispatch share</small>
         </div>
         <div id="shares" class="share-list"></div>
         <div class="panel-head" style="margin-top:20px">
@@ -714,8 +728,9 @@
 
     <p class="footer-note">
       兼容 <code>GET /admin/state</code>、<code>POST /admin/capacity</code>、<code>POST /admin/health</code>。
-      条形图为 <strong>effective_weight 份额</strong>；热点用 <strong>remote_utilization</strong> 高亮。
-      P2C 选路还会比较 loadScore，实测请求占比可能比权重份额更激进地避开热点。
+      权重条使用集群统一绝对刻度：实心条为 <strong>effective_weight</strong>，白色竖线为 <strong>desired_weight</strong>，
+      文字同时给出 capacity 与归一化 dispatch share。热点用 <strong>remote_utilization</strong> 高亮。
+      P2C 选路还会比较 loadScore，实际请求占比可能与归一化权重份额不同。
       无 NPU 时可使用「离线演示」。
     </p>
   </div>
@@ -829,14 +844,14 @@
         </div>
         <div class="metrics">
           <div class="metric"><div class="k">capacity</div><div class="v value-capacity"></div></div>
-          <div class="metric"><div class="k">desired / eff</div><div class="v value-weight"></div></div>
+          <div class="metric"><div class="k">effective / target</div><div class="v value-weight"></div></div>
           <div class="metric"><div class="k">inflight</div><div class="v value-inflight"></div></div>
           <div class="metric"><div class="k">latency</div><div class="v value-latency"></div></div>
         </div>
         <div class="bars">
           <div>
-            <div class="bar-label"><span>weight share</span><b class="label-weight"></b></div>
-            <div class="bar"><i class="bar-weight"></i></div>
+            <div class="bar-label"><span>effective / target</span><b class="label-weight"></b></div>
+            <div class="bar"><i class="bar-weight"></i><span class="weight-target"></span></div>
           </div>
           <div>
             <div class="bar-label"><span>remote utilization</span><b class="label-util"></b></div>
@@ -852,6 +867,22 @@
       const badges = [
         { text: backend.phase || "unknown", cls: backend.phase || "" },
       ];
+      const reasonLabels = {
+        capacity_downscale: "capacity down",
+        capacity_zero: "capacity zero",
+        capacity_upscale: "capacity up",
+        admin_enabled: "admin enabled",
+        health_probe_failed: "probe failed",
+        health_recovered: "health recovered",
+        passive_failure: "passive failure",
+        passive_recovered: "passive recovered",
+      };
+      if (backend.transition_reason && backend.transition_reason !== "admin_disabled") {
+        badges.push({
+          text: reasonLabels[backend.transition_reason] || backend.transition_reason,
+          cls: backend.phase || "",
+        });
+      }
       if (backend.admin_disabled) {
         badges.push({ text: "admin disabled", cls: "drained" });
         if (backend.observed_healthy === false) badges.push({ text: "probe unhealthy", cls: "drained" });
@@ -871,28 +902,31 @@
       }));
     }
 
-    function updateBackendCard(card, backend, totalWeight) {
+    function updateBackendCard(card, backend, totalWeight, weightScale) {
       const share = Math.max(0, backend.effective_weight || 0) / totalWeight;
       const util = Math.min(1, Math.max(0, backend.remote_utilization || 0));
+      const effective = Math.max(0, backend.effective_weight || 0);
+      const target = Math.max(0, backend.desired_weight || 0);
       card.classList.toggle("down", isDown(backend));
       card.classList.toggle("hot", !isDown(backend) && isHot(backend));
       setText(card.querySelector(".node-id"), backend.id);
       setText(card.querySelector(".node-url"), backend.url || "");
       updateBadges(card.querySelector(".badges"), backend);
       setText(card.querySelector(".value-capacity"), fmt(backend.capacity, 0));
-      setText(card.querySelector(".value-weight"), `${fmt(backend.desired_weight)} / ${fmt(backend.effective_weight)}`);
+      setText(card.querySelector(".value-weight"), `${fmt(backend.effective_weight)} / ${fmt(backend.desired_weight)}`);
       setText(card.querySelector(".value-inflight"), `${backend.inflight || 0}/${backend.max_inflight || 0}`);
       setText(card.querySelector(".value-latency"), `${fmt(backend.latency_ewma_ms, 0)}ms`);
-      setText(card.querySelector(".label-weight"), pct(share));
+      setText(card.querySelector(".label-weight"), `${fmt(effective)} / ${fmt(target)} · share ${pct(share)}`);
       setText(card.querySelector(".label-util"), pct(util));
-      card.querySelector(".bar-weight").style.width = `${(share * 100).toFixed(1)}%`;
+      card.querySelector(".bar-weight").style.width = `${Math.min(100, effective / weightScale * 100).toFixed(1)}%`;
+      card.querySelector(".weight-target").style.left = `${Math.min(100, target / weightScale * 100).toFixed(1)}%`;
       card.querySelector(".bar-util").style.width = `${(util * 100).toFixed(1)}%`;
       const error = card.querySelector(".node-error");
       setText(error, backend.last_error || "");
       error.style.display = backend.last_error ? "block" : "none";
     }
 
-    function renderBackendCards(backends, totalWeight) {
+    function renderBackendCards(backends, totalWeight, weightScale) {
       const container = $("nodes");
       const existing = new Map(Array.from(container.querySelectorAll(".node[data-backend-id]"),
         (card) => [card.dataset.backendId, card]));
@@ -901,7 +935,7 @@
       backends.forEach((backend, index) => {
         let card = existing.get(backend.id);
         if (!card) card = createBackendCard(backend.id);
-        updateBackendCard(card, backend, totalWeight);
+        updateBackendCard(card, backend, totalWeight, weightScale);
         if (container.children[index] !== card) container.insertBefore(card, container.children[index] || null);
       });
     }
@@ -912,12 +946,12 @@
       row.dataset.backendId = id;
       row.innerHTML = `
         <div class="name"><span class="share-id"></span><span class="share-value"></span></div>
-        <div class="share-track"><i></i></div>`;
+        <div class="share-track"><i></i><span class="weight-target"></span></div>`;
       row.addEventListener("animationend", () => row.classList.remove("entering"), { once: true });
       return row;
     }
 
-    function renderShares(backends, totalWeight) {
+    function renderShares(backends, totalWeight, weightScale) {
       const container = $("shares");
       const existing = new Map(Array.from(container.querySelectorAll(".share-row[data-backend-id]"),
         (row) => [row.dataset.backendId, row]));
@@ -926,11 +960,15 @@
       existing.forEach((row, id) => { if (!wanted.has(id)) row.remove(); });
       ordered.forEach((backend, index) => {
         const share = Math.max(0, backend.effective_weight || 0) / totalWeight;
+        const effective = Math.max(0, backend.effective_weight || 0);
+        const target = Math.max(0, backend.desired_weight || 0);
         let row = existing.get(backend.id);
         if (!row) row = createShareRow(backend.id);
         setText(row.querySelector(".share-id"), backend.id);
-        setText(row.querySelector(".share-value"), `${pct(share)} · w=${fmt(backend.effective_weight)}`);
-        row.querySelector(".share-track > i").style.width = `${(share * 100).toFixed(1)}%`;
+        setText(row.querySelector(".share-value"),
+          `eff ${fmt(effective)} · target ${fmt(target)} · cap ${fmt(backend.capacity, 0)} · share ${pct(share)}`);
+        row.querySelector(".share-track > i").style.width = `${Math.min(100, effective / weightScale * 100).toFixed(1)}%`;
+        row.querySelector(".weight-target").style.left = `${Math.min(100, target / weightScale * 100).toFixed(1)}%`;
         if (container.children[index] !== row) container.insertBefore(row, container.children[index] || null);
       });
     }
@@ -950,6 +988,11 @@
       refreshBackendOptions(pool);
       const backends = pool.backends || [];
       const totalW = backends.reduce((s, b) => s + Math.max(0, b.effective_weight || 0), 0) || 1;
+      const weightScale = Math.max(1, ...backends.flatMap((b) => [
+        Math.max(0, b.capacity || 0),
+        Math.max(0, b.desired_weight || 0),
+        Math.max(0, b.effective_weight || 0),
+      ]));
       const totalInflight = backends.reduce((s, b) => s + (b.inflight || 0), 0);
       const hot = backends.filter(isHot);
 
@@ -958,8 +1001,8 @@
       $("kpiHot").textContent = hot.length ? hot.map((b) => shortNpu(b.id)).join(", ") : "无";
       $("kpiTime").textContent = data.time ? `state @ ${new Date(data.time).toLocaleTimeString()}` : "no timestamp";
 
-      renderBackendCards(backends, totalW);
-      renderShares(backends, totalW);
+      renderBackendCards(backends, totalW, weightScale);
+      renderShares(backends, totalW, weightScale);
     }
 
     async function fetchLive() {

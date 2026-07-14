@@ -19,12 +19,26 @@ import (
 )
 
 type BackendPhase string
+type TransitionReason string
 
 const (
 	PhaseActive     BackendPhase = "active"
 	PhaseDraining   BackendPhase = "draining"
 	PhaseDrained    BackendPhase = "drained"
 	PhaseRecovering BackendPhase = "recovering"
+)
+
+const (
+	ReasonNone              TransitionReason = ""
+	ReasonCapacityDownscale TransitionReason = "capacity_downscale"
+	ReasonCapacityZero      TransitionReason = "capacity_zero"
+	ReasonCapacityUpscale   TransitionReason = "capacity_upscale"
+	ReasonAdminDisabled     TransitionReason = "admin_disabled"
+	ReasonAdminEnabled      TransitionReason = "admin_enabled"
+	ReasonHealthFailed      TransitionReason = "health_probe_failed"
+	ReasonHealthRecovered   TransitionReason = "health_recovered"
+	ReasonPassiveFailure    TransitionReason = "passive_failure"
+	ReasonPassiveRecovered  TransitionReason = "passive_recovered"
 )
 
 const weightEpsilon = 0.0001
@@ -50,6 +64,7 @@ type Backend struct {
 	healthy             bool
 	adminDisabled       bool
 	phase               BackendPhase
+	transitionReason    TransitionReason
 	phaseSince          time.Time
 	remoteUtilization   float64
 	queueDepth          float64
@@ -68,6 +83,7 @@ type BackendState struct {
 	ID                  string    `json:"id"`
 	URL                 string    `json:"url"`
 	Phase               string    `json:"phase"`
+	TransitionReason    string    `json:"transition_reason,omitempty"`
 	PhaseSince          time.Time `json:"phase_since"`
 	SlowStartProgress   float64   `json:"slow_start_progress"`
 	Capacity            float64   `json:"capacity"`
@@ -265,6 +281,7 @@ func (b *Backend) state(now time.Time) BackendState {
 		ID:                  b.id,
 		URL:                 b.target.String(),
 		Phase:               string(b.phase),
+		TransitionReason:    string(b.transitionReason),
 		PhaseSince:          b.phaseSince,
 		SlowStartProgress:   b.slowStartProgressLocked(now),
 		Capacity:            b.capacity,
@@ -299,10 +316,12 @@ func (b *Backend) setCapacity(capacity float64) error {
 	b.capacity = capacity
 	now := time.Now()
 	switch {
-	case capacity <= 0 || capacity < oldCapacity:
-		b.enterPhaseLocked(PhaseDraining, now)
+	case capacity <= 0:
+		b.enterTransitionLocked(PhaseDraining, ReasonCapacityZero, now)
+	case capacity < oldCapacity:
+		b.enterTransitionLocked(PhaseDraining, ReasonCapacityDownscale, now)
 	case capacity > oldCapacity && b.healthy && !b.adminDisabled && now.After(b.passiveUntil):
-		b.enterPhaseLocked(PhaseRecovering, now)
+		b.enterTransitionLocked(PhaseRecovering, ReasonCapacityUpscale, now)
 	}
 	b.lastUpdated = now
 	b.mu.Unlock()
@@ -320,12 +339,12 @@ func (b *Backend) setAdminHealth(healthy bool) {
 		b.consecutiveFailures = 0
 		b.lastError = ""
 		if b.capacity > 0 && b.healthy && wasUnavailable {
-			b.enterPhaseLocked(PhaseRecovering, now)
+			b.enterTransitionLocked(PhaseRecovering, ReasonAdminEnabled, now)
 		}
 	} else {
 		b.adminDisabled = true
 		if b.phase != PhaseDrained {
-			b.enterPhaseLocked(PhaseDraining, now)
+			b.enterTransitionLocked(PhaseDraining, ReasonAdminDisabled, now)
 		}
 	}
 	b.lastUpdated = now
@@ -349,7 +368,7 @@ func (b *Backend) markFailure(message string) {
 		b.failureCooloffUntil = now.Add(b.failureCooloffDuration)
 	}
 	if b.phase != PhaseDrained {
-		b.enterPhaseLocked(PhaseDraining, now)
+		b.enterTransitionLocked(PhaseDraining, ReasonPassiveFailure, now)
 	}
 	if b.consecutiveFailures >= b.passiveFailureThreshold {
 		b.passiveUntil = now.Add(b.passiveEjectDuration)
@@ -399,13 +418,14 @@ func (b *Backend) setProbeHealth(healthy bool, message string) {
 		b.passiveUntil = time.Time{}
 		b.failureCooloffUntil = time.Time{}
 		b.lastError = ""
-		if !b.adminDisabled && b.capacity > 0 && (b.phase == PhaseDrained || b.phase == PhaseDraining) {
-			b.enterPhaseLocked(PhaseRecovering, now)
+		canRecover := b.transitionReason == ReasonHealthFailed || b.transitionReason == ReasonPassiveFailure
+		if !b.adminDisabled && b.capacity > 0 && canRecover && (b.phase == PhaseDrained || b.phase == PhaseDraining) {
+			b.enterTransitionLocked(PhaseRecovering, ReasonHealthRecovered, now)
 		}
 	} else {
 		b.lastError = message
 		if b.phase != PhaseDrained {
-			b.enterPhaseLocked(PhaseDraining, now)
+			b.enterTransitionLocked(PhaseDraining, ReasonHealthFailed, now)
 		}
 	}
 	b.lastHealthProbe = now
@@ -690,12 +710,12 @@ func (b *Backend) recomputeWeight(policy LoadPolicy, smoothStep float64) {
 	} else {
 		switch b.phase {
 		case PhaseDrained:
-			b.enterPhaseLocked(PhaseRecovering, now)
+			b.enterTransitionLocked(PhaseRecovering, ReasonPassiveRecovered, now)
 			desired *= b.slowStartProgressLocked(now)
 		case PhaseRecovering:
 			progress := b.slowStartProgressLocked(now)
 			desired *= progress
-			if progress >= 1 {
+			if progress >= 1 && weightsClose(b.effectiveWeight, desired) {
 				b.enterPhaseLocked(PhaseActive, now)
 			}
 		case PhaseDraining:
@@ -776,11 +796,19 @@ func (b *Backend) updateLatencyEWMALocked(latencyMillis, alpha float64) {
 }
 
 func (b *Backend) enterPhaseLocked(phase BackendPhase, now time.Time) {
+	if phase == PhaseActive {
+		b.transitionReason = ReasonNone
+	}
 	if b.phase == phase {
 		return
 	}
 	b.phase = phase
 	b.phaseSince = now
+}
+
+func (b *Backend) enterTransitionLocked(phase BackendPhase, reason TransitionReason, now time.Time) {
+	b.transitionReason = reason
+	b.enterPhaseLocked(phase, now)
 }
 
 func (b *Backend) slowStartProgressLocked(now time.Time) float64 {

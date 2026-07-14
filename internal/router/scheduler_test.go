@@ -359,6 +359,48 @@ func TestAdminEnableDoesNotOverrideFailedHealthProbe(t *testing.T) {
 	}
 }
 
+func TestCapacityDownscaleIsNotOverriddenBySuccessfulHealthProbe(t *testing.T) {
+	cfg := Config{
+		DefaultPool: "default",
+		Pools: []PoolConfig{{
+			Name: "default",
+			Backends: []BackendConfig{{
+				ID:       "npu-a",
+				URL:      "http://127.0.0.1:9001",
+				Capacity: 10,
+			}},
+		}},
+	}
+	cfg.applyDefaults()
+
+	rt, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	backend, ok := rt.findBackend("default", "npu-a")
+	if !ok {
+		t.Fatal("backend not found")
+	}
+
+	if err := backend.setCapacity(1); err != nil {
+		t.Fatalf("set capacity: %v", err)
+	}
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+	backend.setProbeHealth(true, "")
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+
+	state := backend.state(time.Now())
+	if state.Phase != string(PhaseDraining) {
+		t.Fatalf("phase after successful probe = %q, want draining", state.Phase)
+	}
+	if state.TransitionReason != string(ReasonCapacityDownscale) {
+		t.Fatalf("transition reason = %q, want %q", state.TransitionReason, ReasonCapacityDownscale)
+	}
+	if state.DesiredWeight <= 0 || state.DesiredWeight > 1 {
+		t.Fatalf("desired weight after downscale = %v, want in (0,1]", state.DesiredWeight)
+	}
+}
+
 func TestBackendPhaseTransitionsForDrainAndRecover(t *testing.T) {
 	cfg := Config{
 		DefaultPool: "default",
@@ -414,6 +456,14 @@ func TestBackendPhaseTransitionsForDrainAndRecover(t *testing.T) {
 
 	backend.mu.Lock()
 	backend.phaseSince = time.Now().Add(-11 * time.Second)
+	backend.mu.Unlock()
+	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
+	if got := backend.state(time.Now()).Phase; got != string(PhaseRecovering) {
+		t.Fatalf("phase before weight convergence = %q, want recovering", got)
+	}
+
+	backend.mu.Lock()
+	backend.effectiveWeight = backend.desiredWeight
 	backend.mu.Unlock()
 	backend.recomputeWeight(rt.cfg.Load, rt.cfg.SmoothStep)
 	if got := backend.state(time.Now()).Phase; got != string(PhaseActive) {

@@ -242,6 +242,9 @@ func (rt *Router) handleMetrics(w http.ResponseWriter, req *http.Request) {
 		for _, backend := range pool.Backends {
 			fmt.Fprintf(w, "router_backend_capacity{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.Capacity)
 			fmt.Fprintf(w, "router_backend_phase{pool=%q,backend=%q,phase=%q} 1\n", pool.Name, backend.ID, backend.Phase)
+			if backend.TransitionReason != "" {
+				fmt.Fprintf(w, "router_backend_transition{pool=%q,backend=%q,reason=%q} 1\n", pool.Name, backend.ID, backend.TransitionReason)
+			}
 			fmt.Fprintf(w, "router_backend_slow_start_progress{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.SlowStartProgress)
 			fmt.Fprintf(w, "router_backend_desired_weight{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.DesiredWeight)
 			fmt.Fprintf(w, "router_backend_effective_weight{pool=%q,backend=%q} %.6f\n", pool.Name, backend.ID, backend.EffectiveWeight)

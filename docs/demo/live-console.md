@@ -28,7 +28,7 @@ python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 878
 
 | 模式 | 作用 |
 |---|---|
-| **连接 Live** | 轮询 `GET /admin/state`，展示 phase / capacity / desired·effective weight / inflight / remote_utilization |
+| **连接 Live** | 轮询 `GET /admin/state`，展示 phase / transition_reason / capacity / desired·effective weight / inflight / remote_utilization |
 | **现场按钮** | `POST /admin/capacity`、`POST /admin/health`（平滑降容、持久人工摘除与恢复） |
 | **离线演示** | 无 NPU 时也能预演热点 / 降容 / 故障 / 恢复场景 |
 
@@ -37,6 +37,8 @@ python3 scripts/serve_demo_dashboard.py --admin http://127.0.0.1:8181 --port 878
 - 数据协议与当前仓库 `internal/router` 的 JSON 字段一致。
 - 「标记不健康」设置 `admin_disabled=true`，不会被后续成功健康探测自动覆盖；「标记健康」清除人工摘除，并按 slow-start 恢复流量。
 - `observed_healthy` 表示真实探测结果，`healthy` 表示叠加管理员禁用后的最终可用状态；人工摘除期间即使 `effective_weight` 尚在平滑衰减，调度器也不会再分配新请求。
+- `transition_reason` 区分 `capacity_downscale`、`capacity_upscale`、健康故障、人工摘除和被动失败；成功健康探测不会再把容量下降误判成恢复。
+- 权重条采用集群统一绝对刻度：实心条是 `effective_weight`，白色竖线是 `desired_weight`，文字同时显示 `capacity` 与归一化 dispatch share。百分比只用于说明相对份额，不再单独承担权重可视化。
 - 同一 origin 访问时无跨域问题；admin 面已加 CORS，便于调试。
 - 可视化展示的是 **effective_weight 份额** 与 **remote_utilization**；P2C 选路还会比较 loadScore，实测请求占比可能更激进地避开热点——页面底部有说明，答辩时可主动讲清。
 
